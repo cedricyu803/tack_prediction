@@ -70,6 +70,7 @@ File descriptions
 
 """
 Exploratory data analysis, plots
+Summary at the end of this script
 """
 
 
@@ -1346,7 +1347,7 @@ plt.xlim(-0.1,10.5)
 #!!!
 """
 
-Summary
+Summary:
 No notable outliers
 use ffill for missing values
 angles (yaw, AWA, etc.): convert to principal branch (-180,180)
@@ -1363,12 +1364,13 @@ for col in cols_to_drop:
 
 cols_to_keep = ['CurrentSpeed', 'CurrentDir', 'AWS', 'AWA', 'Roll', 'Pitch', 'HoG', 'AirTemp', 'SoS', 'AvgSoS', 'VMG', 'Leeway', 'TWD', 'WSoG', 'Yaw', 'Tacking']
 
+** It turns out this choice of features is pretty bad =[. See rolling_forecast_feature_selection.py
+
 We imagine that our tacking prediction model may be used in sailing races where time is of the essence. Moreover, the boat may not have Internet (cloud) access. Our models need to be lightweight, so they run fast (low response time) on the local machine on the boat with limited computing reousrces.
 
 ML models
 
-Use lag 5 for features, lag 1 for target (NO!), sliding window rolling forecast.
-If we use LSTM, use lag 5 for all features
+Use a few lags (test it) for features, lag 1 for target (NO!), sliding window rolling forecast.
 
 The training and validation windows should be large enough to include some tacking events; severe class imbalance; tacking occurs too rarely, so our sliding training window may not see any tacking events at all
 
@@ -1376,8 +1378,8 @@ Models need to be re-trained regularly to keep errors from significantly increas
 
 Plan: 
 Use 18-hour windows for both training and validation windows
-Multi-step prediction-- a model makes predictions for the future 1 hour (3600 seconds)
-At the end of each hour, slide the training and validation windows and train a new model
+Multi-step prediction-- a model makes predictions for the future 12 hour
+At the end of each 12 hour, slide the training and validation windows and train a new model
 
 
 Evaluation metric: F_beta? AUC?

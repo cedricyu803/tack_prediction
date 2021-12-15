@@ -65,7 +65,8 @@ File descriptions
 #%% This file
 
 """
-# Rolling forecast with the good features and lags
+# Experiments with feature selection and engineering
+# Rolling forecast
 """
 
 #%% Workflow
@@ -75,7 +76,7 @@ File descriptions
 2. Rolling forecast: 
     sliding training window is 18 hours = 64800 seconds, validation window is 12 hours = 43200 seconds
     preprocessing
-    fit models: logistic regression, LSTM
+    fit models: logistic regression, XGBoost, LSTM
 """
 
 #%% Preamble
@@ -109,7 +110,7 @@ def f1_eval(y_pred, dtrain):
     return 'f1_err', err
 
 # beta
-beta = 2
+beta = 1
 def fbeta_eval(y_pred, dtrain):
     y_true = dtrain.get_label()
     err = 1-fbeta_score(y_true, np.round(y_pred), beta = beta)
@@ -132,9 +133,16 @@ set_seed(0)
 
 #%% Hyper-parameters
 
+# cols_to_keep = ['CurrentSpeed', 'CurrentDir', 'AWS', 'AWA', 'Roll', 'Pitch', 'HoG', 'AirTemp', 'SoS', 'AvgSoS', 'VMG', 'Leeway', 'TWD', 'WSoG', 'Yaw', 'Tacking']
+
 cols_to_keep = ['CurrentSpeed', 'CurrentDir', 'TWS', 'TWA', 'AWS', 'AWA', 'Roll',
        'Pitch', 'HeadingMag', 'HoG', 'HeadingTrue', 'AirTemp', 'SoG', 'SoS', 'AvgSoS', 'VMG', 'Leeway', 'TWD',
        'WSoG', 'VoltageDrawn', 'ModePilote', 'Yaw', 'Tacking']
+
+
+# cols_to_keep = ['CurrentSpeed', 'CurrentDir', 'TWS', 'TWA', 'AWS', 'AWA', 'Roll',
+#        'Pitch', 'HeadingMag', 'HoG', 'HeadingTrue', 'AirTemp', 'SoG', 'SoS', 'AvgSoS', 'VMG', 'RudderAng', 'Leeway', 'TWD',
+#        'WSoG', 'VoltageDrawn', 'ModePilote', 'Yaw', 'Tacking']
 
 # angles to convert to sines and cosines
 triglist = ['CurrentDir', 'TWD', 'HoG', 'HeadingMag', 'HeadingTrue']
@@ -143,10 +151,6 @@ triglist = ['CurrentDir', 'TWD', 'HoG', 'HeadingMag', 'HeadingTrue']
 ang_list = ['TWA', 'AWA', 'Pitch', 'Roll', 'Yaw', 'Leeway']
 
 # not including present time step
-# logistic regression:
-# lags = 1 for best F1 and F_0.5 (prefer precision i.e. false negative is OK) scores
-# lags = 2 for best F2 (prefer recall i.e. false positive is OK) scores
-# lags = 4 for best AUC
 lags = 1
 
 # size of sliding windows in seconds
@@ -187,7 +191,7 @@ train_df = train_df.fillna(method='ffill')
 preprocessing(df) takes a labeled/unlabeled dataset df and returns a preprocessed one
 """
 
-# for nlags in [3,4,5,6,7,8]:
+# for nlags in [3,4,5,6,7]:
 #     lags = nlags
     
 def preprocessing(df):
@@ -409,8 +413,7 @@ validation_DateTime = train_df_DateTime.iloc[window_size_train:window_size_train
 # y_valid = Xy_rest_partitioned[0]['Tacking'].to_numpy()
 y_valid = pd.concat([X_chunk['Tacking'] for X_chunk in Xy_rest_partitioned]).to_numpy()
 
-# !!!
-print('\n lags = {}'.format(lags))
+# print('\n lags = {}'.format(lags))
 print('\nF_beta score (beta=1): ', fbeta_score(y_valid, rolling_forecast, beta=1))
 print('F_beta score (beta=2): ', fbeta_score(y_valid, rolling_forecast, beta=2))
 print('F_beta score (beta=0.5): ', fbeta_score(y_valid, rolling_forecast, beta=0.5))
@@ -420,7 +423,32 @@ print('AUC score: ', roc_auc_score(y_valid, rolling_forecast))
 # logistic regression
 # validation window = 12 hours
 # C=0.1:
-# lag 1
+# all original features except DateTime
+# F_beta score (beta=1):  0.1945965036199894
+# F_beta score (beta=2):  0.1790938048495092
+# F_beta score (beta=0.5):  0.2130374265388184
+# AUC score:  0.5616074407741074
+# also discard latitude and longitude
+# F_beta score (beta=1):  0.22926766485048694
+# F_beta score (beta=2):  0.25462654138634244
+# F_beta score (beta=0.5):  0.2085024033959673
+# AUC score:  0.5919155266377489
+# also discard 'RudderAng'
+# F_beta score (beta=1):  0.2548609294620281
+# F_beta score (beta=2):  0.280529003032746
+# F_beta score (beta=0.5):  0.2334962934560327
+# AUC score:  0.6074213101990881
+# also convert some angles into sines and cosines
+# F_beta score (beta=1):  0.3518083426414513
+# F_beta score (beta=2):  0.4142553924858952
+# F_beta score (beta=0.5):  0.30572216569378247
+# AUC score:  0.6862292848403959
+# also convert other angles to principal branch (-180,180) degrees
+# F_beta score (beta=1):  0.3556641967764113
+# F_beta score (beta=2):  0.42065700552925445
+# F_beta score (beta=0.5):  0.30806690662714376
+# AUC score:  0.6902652652652652
+# plus lag 1
 # F_beta score (beta=1):  0.3662066393136889      <-------
 # F_beta score (beta=2):  0.4385385027693407
 # F_beta score (beta=0.5):  0.3143570696721312    <-------
@@ -430,36 +458,23 @@ print('AUC score: ', roc_auc_score(y_valid, rolling_forecast))
 # F_beta score (beta=2):  0.4413421590028871      <-------
 # F_beta score (beta=0.5):  0.30792473223936323
 # AUC score:  0.7040762985207428
-# lags = 3
+# lag 3
 # F_beta score (beta=1):  0.3579348824069496
 # F_beta score (beta=2):  0.4408643307004418
 # F_beta score (beta=0.5):  0.30126498002663116
 # AUC score:  0.7042681570459348
-# lags = 4
+# lag 4
 # F_beta score (beta=1):  0.35318444995864356
 # F_beta score (beta=2):  0.44038778877887785
 # F_beta score (beta=0.5):  0.29480806407069876
 # AUC score:  0.704471137804471                   <-------
-# lags = 5
+# lag 5
 # F_beta score (beta=1):  0.3475856487725924
 # F_beta score (beta=2):  0.43814608269858546
 # F_beta score (beta=0.5):  0.28804882410802113
 # AUC score:  0.7034701368034703
-# lags = 6
-# F_beta score (beta=1):  0.34291410533311184
-# F_beta score (beta=2):  0.43540629482744075
-# F_beta score (beta=0.5):  0.2828327121245341
-# AUC score:  0.7019728061394729
-# lags = 7
-# F_beta score (beta=1):  0.34005839320276876
-# F_beta score (beta=2):  0.43450195328873453
-# F_beta score (beta=0.5):  0.27934074936403225
-# AUC score:  0.701633578022467
-# lags = 8
-# F_beta score (beta=1):  0.3377238515442512
-# F_beta score (beta=2):  0.4338656975193385
-# F_beta score (beta=0.5):  0.2764617149655817
-# AUC score:  0.7014347681014348
+
+
 
 
 """
@@ -476,58 +491,18 @@ ax.set_yticks([0, 1])
 ax.set_title(None)
 ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
-# plt.savefig('predictions/good_features_lag4_logreg_rolling_windows_18_12hrs')
+# plt.savefig('predictions/good_features_lag1_rolling_windows_18_12hrs')
 
 
 """
 # Confusion matrix
 """
 
-from sklearn.metrics import confusion_matrix, precision_score, recall_score
+from sklearn.metrics import confusion_matrix
 # the count of true negatives is C00, false negatives is C10, true positives is C11 and false positives is C01.
-print(confusion_matrix(y_valid, rolling_forecast))
-print('Precision score: ', precision_score(y_valid, rolling_forecast))
-print('Recall score: ', recall_score(y_valid, rolling_forecast))
-# lag 1
-# array([[107699,  12181],
-#        [  4811,   4909]], dtype=int64)
-# Precision score:  0.28724400234055003    <------
-# Recall score:  0.5050411522633745
-# lag 2
-# [[106970  12910]
-#  [  4706   5014]]
-# Precision score:  0.27973666592278507
-# Recall score:  0.5158436213991769    
-# lag 3
-# [[106350  13530]
-#  [  4652   5068]]
-# Precision score:  0.27250241961501237
-# Recall score:  0.5213991769547325
-# lag 4
-# [[105708  14172]
-#  [  4596   5124]]
-# Precision score:  0.26554726368159204
-# Recall score:  0.5271604938271605
-# lag 5
-# [[105098  14782]
-#  [  4566   5154]]
-# Precision score:  0.25852728731942215
-# Recall score:  0.5302469135802469
-# lag 6
-# [[104665  15215]
-#  [  4560   5160]]
-# Precision score:  0.2532515337423313
-# Recall score:  0.5308641975308642
-# lag 7
-# [[104300  15580]
-#  [  4537   5183]]
-# Precision score:  0.249626739873814
-# Recall score:  0.5332304526748971
-# lag 8
-# [[103981  15899]
-#  [  4515   5205]]
-# Precision score:  0.24663570887035632
-# Recall score:  0.5354938271604939      <------
+confusion_matrix(y_valid, rolling_forecast)
+
+
 
 
 
@@ -536,7 +511,9 @@ print('Recall score: ', recall_score(y_valid, rolling_forecast))
 # device = cuda.get_current_device()
 # device.reset()
 
-#%% logistic regression: feature coefficients [with lag 1 features]
+
+
+#%% logistic regression: feature coefficients [without target lag 1 feature]
 
 """ feature coefficients"""
 # get the feature names as numpy array
@@ -550,60 +527,47 @@ sorted_coef_logreg = np.abs(model.coef_[0]).argsort()
 print('Smallest Coefs:\n{}'.format(feature_names[sorted_coef_logreg[:20]]))
 print('Largest Coefs: \n{}'.format(feature_names[sorted_coef_logreg[:-21:-1]]))
 # Smallest Coefs:
-# ['WSoG_lag_1' 'HeadingMag_cos_lag_1' 'SoG_lag_1' 'HoG_cos' 'HoG_cos_lag_1'
-#  'HeadingMag_sin_lag_1' 'TWD_cos_lag_1' 'HoG_sin_lag_1' 'HeadingMag_cos'
-#  'CurrentDir_cos' 'HeadingTrue_cos' 'HoG_sin' 'TWD_cos'
-#  'HeadingTrue_cos_lag_1' 'CurrentDir_cos_lag_1' 'HeadingMag_sin'
-#  'TWD_sin_lag_1' 'TWD_sin' 'CurrentDir_sin' 'CurrentDir_sin_lag_1']
+# ['HoG_cos' 'HoG_cos_lag_2' 'HoG_cos_lag_3' 'HoG_cos_lag_1' 'HoG_cos_lag_5'
+#  'HoG_cos_lag_4' 'HoG_sin_lag_5' 'HoG_sin_lag_3' 'HoG_sin_lag_2'
+#  'HoG_sin_lag_4' 'WSoG_lag_2' 'HoG_sin_lag_1' 'HoG_sin'
+#  'CurrentDir_cos_lag_4' 'CurrentDir_cos_lag_3' 'CurrentDir_cos_lag_5'
+#  'TWD_sin_lag_5' 'CurrentDir_cos_lag_2' 'TWD_cos_lag_1' 'CurrentDir_cos']
 # Largest Coefs: 
-# ['AWA_lag_1' 'Yaw_lag_1' 'Yaw' 'AirTemp' 'AirTemp_lag_1' 'SoS' 'TWS_lag_1'
-#  'TWS' 'TWA_lag_1' 'Pitch' 'Pitch_lag_1' 'Roll_lag_1' 'AWA' 'TWA'
-#  'AWS_lag_1' 'VMG_lag_1' 'VoltageDrawn_lag_1' 'AWS' 'VoltageDrawn'
-#  'CurrentSpeed']
+# ['SoS' 'Yaw_lag_4' 'Yaw_lag_5' 'Yaw_lag_3' 'CurrentSpeed' 'Yaw_lag_2'
+#  'Pitch_lag_4' 'Pitch_lag_3' 'Pitch_lag_5' 'AWA_lag_5' 'SoS_lag_1'
+#  'Yaw_lag_1' 'AvgSoS' 'AWS_lag_5' 'Pitch_lag_2' 'AvgSoS_lag_5' 'Pitch'
+#  'Pitch_lag_1' 'AirTemp' 'AirTemp_lag_1']
 
 # smallest absolute-coefficients
 logreg_coef[:10]
-# array([0.00041963, 0.00115628, 0.00697025, 0.00719586, 0.01011405,
-#        0.01564169, 0.02760203, 0.02891603, 0.029022  , 0.03127004])
+# array([0.00048453, 0.00190568, 0.00277005, 0.00664827, 0.01515842,
+#        0.01549623, 0.01875815, 0.02201448, 0.0226287 , 0.02425764])
 # largest absolute-coefficients
 logreg_coef[:-11:-1]
-# array([2.73040145, 2.72453614, 2.52166662, 2.39053482, 2.3293054 ,
-#        2.04060126, 1.99097316, 1.96664918, 1.73755162, 1.65643076])
+# array([3.17048214, 3.04464682, 2.85167851, 2.79872434, 2.39916501,
+#        2.38034591, 2.23961572, 2.02752777, 1.91030257, 1.89853359])
 
 
-#%% logistic regression: feature coefficients [with lags=2 features]
 
-""" feature coefficients"""
-# get the feature names as numpy array
-feature_names = np.array(list(train_df_processed.drop(['Tacking'], axis = 1).columns))
-# Sort the [absolute values] of coefficients from the model
-logreg_coef = np.abs(model.coef_[0]).copy()
-logreg_coef.sort()
-sorted_coef_logreg = np.abs(model.coef_[0]).argsort()
 
-# Find the 20 smallest and 10 largest absolute-coefficients
-print('Smallest Coefs:\n{}'.format(feature_names[sorted_coef_logreg[:20]]))
-print('Largest Coefs: \n{}'.format(feature_names[sorted_coef_logreg[:-21:-1]]))
-# Smallest Coefs:
-# ['WSoG_lag_1' 'HeadingMag_cos_lag_1' 'SoG_lag_1' 'HoG_cos' 'HoG_cos_lag_1'
-#  'HeadingMag_sin_lag_1' 'TWD_cos_lag_1' 'HoG_sin_lag_1' 'HeadingMag_cos'
-#  'CurrentDir_cos' 'HeadingTrue_cos' 'HoG_sin' 'TWD_cos'
-#  'HeadingTrue_cos_lag_1' 'CurrentDir_cos_lag_1' 'HeadingMag_sin'
-#  'TWD_sin_lag_1' 'TWD_sin' 'CurrentDir_sin' 'CurrentDir_sin_lag_1']
-# Largest Coefs: 
-# ['AWA_lag_1' 'Yaw_lag_1' 'Yaw' 'AirTemp' 'AirTemp_lag_1' 'SoS' 'TWS_lag_1'
-#  'TWS' 'TWA_lag_1' 'Pitch' 'Pitch_lag_1' 'Roll_lag_1' 'AWA' 'TWA'
-#  'AWS_lag_1' 'VMG_lag_1' 'VoltageDrawn_lag_1' 'AWS' 'VoltageDrawn'
-#  'CurrentSpeed']
+#%% Models: Rolling forecast [with target lag 1 feature]
 
-# smallest absolute-coefficients
-logreg_coef[:10]
-# array([0.00041963, 0.00115628, 0.00697025, 0.00719586, 0.01011405,
-#        0.01564169, 0.02760203, 0.02891603, 0.029022  , 0.03127004])
-# largest absolute-coefficients
-logreg_coef[:-11:-1]
-# array([2.73040145, 2.72453614, 2.52166662, 2.39053482, 2.3293054 ,
-#        2.04060126, 1.99097316, 1.96664918, 1.73755162, 1.65643076])
+from sklearn.metrics import fbeta_score, roc_auc_score
+
+#################################
+# Naive forecast: y_pred(t) = y_true(t-1)
+
+y_pred_naive = train_df['Tacking'].shift(1).iloc[window_size_train:window_size_train+window_size_valid*len(Xy_rest_partitioned)]
+
+
+print('F_beta score: ', fbeta_score(y_valid, y_pred_naive, beta=1))
+# F_beta score:  0.9981481481481481
+print('F_beta score: ', fbeta_score(y_valid, y_pred_naive, beta=2))
+# F_beta score:  0.998148148148148
+print('F_beta score: ', fbeta_score(y_valid, y_pred_naive, beta=0.5))
+# F_beta score:  0.998148148148148
+print('AUC score: ', roc_auc_score(y_valid, y_pred_naive))
+# AUC score:  0.9990104608425218
 
 
 
