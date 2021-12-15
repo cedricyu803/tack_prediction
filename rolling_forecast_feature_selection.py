@@ -246,8 +246,8 @@ def preprocessing(df):
 train-validation split: sliding training window is 18 hours=64800 seconds, validation and prediction windows are 12 hours = 43200 seconds.
 
 Given an initial dataset, take the first 18 hours as training set, and divide the rest into 3 (complete) chunks of 12 hours. 
-If the last chunk does not have 21600 instances, ignore until the sensors gather enough data.
-Thereafter, once we gather 6 hours of data, it is appended to the existing dataset (so we can fillna with previous values) and retrain the model with new train/validation windows.
+If the last chunk does not have 43200 instances, ignore until the sensors gather enough data.
+Thereafter, once we gather 12 hours of data, it is appended to the existing dataset (so we can fillna with previous values) and retrain the model with new train/validation windows.
 """
 
 # preprocess dataset
@@ -261,8 +261,8 @@ Xy_train = train_df_processed.iloc[:window_size_train]
 Xy_rest = train_df_processed.iloc[window_size_train:]
 
 
-# partition Xy_rest into chunks of validation sets of 6 hours = 21600 seconds
-# if the last chunk does not have 21600 instances, ignore until the sensors gather enough data
+# partition Xy_rest into chunks of validation sets of 12 hours = 43200 seconds
+# if the last chunk does not have 43200 instances, ignore until the sensors gather enough data
 Xy_rest_partitioned = []
 for i in range(len(Xy_rest)//window_size_valid):
     Xy_chunk = Xy_rest.iloc[window_size_valid*i:window_size_valid*(i+1)]

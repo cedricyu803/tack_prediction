@@ -66,6 +66,7 @@ File descriptions
 
 """
 # Rolling forecast with the good features and lags
+# Commented out tensorflow and LSTM network
 """
 
 #%% Workflow
@@ -75,7 +76,7 @@ File descriptions
 2. Rolling forecast: 
     sliding training window is 18 hours = 64800 seconds, validation window is 12 hours = 43200 seconds
     preprocessing
-    fit models: logistic regression, LSTM
+    fit model: logistic regression
 """
 
 #%% Preamble
@@ -98,9 +99,10 @@ os.chdir(r'C:\Users\Cedric Yu\Desktop\tacking')
 
 
 from tqdm import tqdm    # fancy progress bar for the for-loop
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA   # for dimensionality reduction
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import fbeta_score, roc_auc_score, f1_score
+from sklearn.metrics import confusion_matrix, precision_score, recall_score
 
 # f1 and f_beta metrics for XGBoost fitting
 def f1_eval(y_pred, dtrain):
@@ -121,14 +123,14 @@ from xgboost import XGBClassifier
 
 #%% tensorflow
 
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
-# import tensorflow_addons as tfa # import tfa which contains metrics for regression
-# from tensorflow.keras import regularizers
-from keras.initializers import glorot_uniform
-from tensorflow.random import set_seed
-set_seed(0)
+# import tensorflow as tf
+# from tensorflow import keras
+# from tensorflow.keras import layers
+# # import tensorflow_addons as tfa # import tfa which contains metrics for regression
+# # from tensorflow.keras import regularizers
+# from keras.initializers import glorot_uniform
+# from tensorflow.random import set_seed
+# set_seed(0)
 
 #%% Hyper-parameters
 
@@ -172,7 +174,7 @@ train_df['DateTime'] = pd.to_datetime(train_df['DateTime'])
 train_df_DateTime = train_df['DateTime']
 # train_df_raw.shape
 
-train_df.shape
+# train_df.shape
 # (220000, 27)
 
 # keep only columns we use
@@ -242,8 +244,8 @@ def preprocessing(df):
 train-validation split: sliding training window is 18 hours=64800 seconds, validation and prediction windows are 12 hours = 43200 seconds.
 
 Given an initial dataset, take the first 18 hours as training set, and divide the rest into 3 (complete) chunks of 12 hours. 
-If the last chunk does not have 21600 instances, ignore until the sensors gather enough data.
-Thereafter, once we gather 6 hours of data, it is appended to the existing dataset (so we can fillna with previous values) and retrain the model with new train/validation windows.
+If the last chunk does not have 43200 instances, ignore until the sensors gather enough data.
+Thereafter, once we gather 12 hours of data, it is appended to the existing dataset (so we can fillna with previous values) and retrain the model with new train/validation windows.
 """
 
 # preprocess dataset
@@ -257,8 +259,8 @@ Xy_train = train_df_processed.iloc[:window_size_train]
 Xy_rest = train_df_processed.iloc[window_size_train:]
 
 
-# partition Xy_rest into chunks of validation sets of 6 hours = 21600 seconds
-# if the last chunk does not have 21600 instances, ignore until the sensors gather enough data
+# partition Xy_rest into chunks of validation sets of 12 hours = 43200 seconds
+# if the last chunk does not have 43200 instances, ignore until the sensors gather enough data
 Xy_rest_partitioned = []
 for i in range(len(Xy_rest)//window_size_valid):
     Xy_chunk = Xy_rest.iloc[window_size_valid*i:window_size_valid*(i+1)]
@@ -281,7 +283,7 @@ histories_nn = []
 # initialise one model, then re-train the same model in each sliding window
 use_logistic = False
 use_XGBoost = False
-use_nn = False
+# use_nn = False
 
 # logistic regression
 use_logistic = True
@@ -319,7 +321,7 @@ for i in tqdm(range(len(Xy_rest_partitioned))):
     X_valid_roll = Xy_valid_roll.drop(['Tacking'], axis = 1)
     y_valid_roll = Xy_valid_roll['Tacking']
     
-    # Re-shuffle training set to avoid sequence bias
+    # re-shuffle training set to avoid sequence bias
     Xy_cols = history_rolling.columns
     np.random.seed(0)
     Xy_train_roll_shuffled = history_rolling.to_numpy().copy()
@@ -330,7 +332,7 @@ for i in tqdm(range(len(Xy_rest_partitioned))):
     X_train_roll_shuffled = Xy_train_roll_shuffled.drop(['Tacking'], axis = 1)
     y_train_roll_shuffled = Xy_train_roll_shuffled['Tacking']
     
-    # Dimensionality reduction with PCA
+    # eimensionality reduction with PCA
     # a little faster for logistic regression (like 3 seconds vs 5 seconds), but detrimental to model scores
     # pca = PCA(n_components=60)
     # pca.fit(X_train_roll_shuffled)
@@ -346,7 +348,6 @@ for i in tqdm(range(len(Xy_rest_partitioned))):
     # re-train the same model and make predictions
     if use_logistic:
         model.fit(X_train_roll_shuffled_scaled, y_train_roll_shuffled)
-        
         # forecast
         y_pred = model.predict(X_valid_roll_scaled)
         
@@ -356,25 +357,24 @@ for i in tqdm(range(len(Xy_rest_partitioned))):
                   eval_metric=fbeta_eval,
                   early_stopping_rounds = 30, 
                   verbose=0)
-        
         # forecast
         y_pred = model.predict(X_valid_roll_scaled)
         
-    elif use_nn:
-        X_train_roll_shuffled_scaled_nn = np.expand_dims(X_train_roll_shuffled_scaled, -1)
-        X_valid_roll_scaled_nn = np.expand_dims(X_valid_roll_scaled, -1)
+    # elif use_nn:
+    #     X_train_roll_shuffled_scaled_nn = np.expand_dims(X_train_roll_shuffled_scaled, -1)
+    #     X_valid_roll_scaled_nn = np.expand_dims(X_valid_roll_scaled, -1)
         
-        history = model.fit(X_train_roll_shuffled_scaled_nn, y_train_roll_shuffled, 
-                    validation_data=(X_valid_roll_scaled_nn, y_valid_roll),
-                    class_weight=class_weight,
-                    epochs=epochs, 
-                    callbacks = [callback])
-        histories_nn.append(history)
+    #     history = model.fit(X_train_roll_shuffled_scaled_nn, y_train_roll_shuffled, 
+    #                 validation_data=(X_valid_roll_scaled_nn, y_valid_roll),
+    #                 class_weight=class_weight,
+    #                 epochs=epochs, 
+    #                 callbacks = [callback])
+    #     histories_nn.append(history)
         
-        # forecast
-        y_pred = model.predict(X_valid_roll_scaled_nn)
-        y_pred = y_pred.squeeze()
-        y_pred = y_pred > 0.5
+    #     # forecast
+    #     y_pred = model.predict(X_valid_roll_scaled_nn)
+    #     y_pred = y_pred.squeeze()
+    #     y_pred = y_pred > 0.5
         
     else: 
         print('Pick a model.')
@@ -391,9 +391,13 @@ for i in tqdm(range(len(Xy_rest_partitioned))):
 # model.save('LSTM_model.h5')
 
 # logistic regression
+# without lag features
 # 100%|██████████| 3/3 [00:01<00:00,  1.80it/s]
 # with lag features
 # 100%|██████████| 3/3 [00:02<00:00,  1.03it/s]
+
+
+#%% Model performance and predictions
 
 """
 # Summary of model performance
@@ -462,28 +466,8 @@ print('AUC score: ', roc_auc_score(y_valid, rolling_forecast))
 # AUC score:  0.7014347681014348
 
 
-"""
-# Plot forecast against ground truth
-"""
-plt.figure(dpi=150)
-plt.plot(validation_DateTime, rolling_forecast, color = 'tomato', label = 'Model forecast')
-plt.plot(validation_DateTime, y_valid, color = 'black', label='Ground truth')
-ax = plt.gca()
-ax.set_xlabel('Date-Hour')
-ax.legend(loc='upper right')
-ax.set_ylabel('Tacking')
-ax.set_yticks([0, 1])
-ax.set_title(None)
-ax.spines['top'].set_visible(False)
-ax.spines['right'].set_visible(False)
-# plt.savefig('predictions/good_features_lag4_logreg_rolling_windows_18_12hrs')
+# Confusion matrix, precision, recall
 
-
-"""
-# Confusion matrix
-"""
-
-from sklearn.metrics import confusion_matrix, precision_score, recall_score
 # the count of true negatives is C00, false negatives is C10, true positives is C11 and false positives is C01.
 print(confusion_matrix(y_valid, rolling_forecast))
 print('Precision score: ', precision_score(y_valid, rolling_forecast))
@@ -529,6 +513,22 @@ print('Recall score: ', recall_score(y_valid, rolling_forecast))
 # Precision score:  0.24663570887035632
 # Recall score:  0.5354938271604939      <------
 
+
+"""
+# Plot forecast against ground truth
+"""
+plt.figure(dpi=150)
+plt.plot(validation_DateTime, rolling_forecast, color = 'tomato', label = 'Model forecast')
+plt.plot(validation_DateTime, y_valid, color = 'black', label='Ground truth')
+ax = plt.gca()
+ax.set_xlabel('Date-Hour')
+ax.legend(loc='upper right')
+ax.set_ylabel('Tacking')
+ax.set_yticks([0, 1])
+ax.set_title(None)
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+# plt.savefig('predictions/good_features_lag4_logreg_rolling_windows_18_12hrs')
 
 
 # free VRAM after using tensorflow
