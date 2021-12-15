@@ -1,0 +1,38 @@
+
+# Latitude: Latitudinal coordinate
+# Longitude: Longitudinal coordinate
+
+# CurrentSpeed: knots. speed of water current
+# CurrentDir: degrees. wrt. true heading or magnetic heading??
+# WSoG: knots. Wind speed over ground, i.e. relative to ground. wrt. true heading or magnetic heading??
+# TWD: degrees. True wind direction, relative to [water]
+# TWS: knots. True Wind Speed, relative to [water]
+# TWA: degrees. True Wind Angle, angle between [wind relative to water] and [boat direction]
+# AWS: knots. Apparent Wind Speed, relative to the [boat]
+# AWA: degrees. Apparent Wind Angle, angle between [wind relative to boat] and [boat direction]
+
+# HeadingTrue: degrees. true heading.
+# HeadingMag: degrees. magnetic heading
+# HoG: degrees. heading over ground, i.e. [course] heading [over ground]
+# Roll: degrees. Roll, also equals to -Heel
+# Pitch: degrees. Pitch angle
+# Yaw: degrees. angle between heading [over ground] and boat True heading
+# Leeway: degrees. Angle between [water track] of boat and boat True heading
+# AirTemp: degrees Celcius. air temperature
+# RudderAng: degrees. Rudder angle
+
+# SoG: knots. Speed over ground
+# SoS: knots. Speed over surface (water surface)
+# AvgSoS: knots. Average speed over surface per minute
+# VMG: knots. Velocity made good = speed at which you are making progress directly upwind or downwind. Calculated as (Speed over surface) * cos(True Wind angle)
+
+# VoltageDrawn: Volts. Voltage drawn by the system of one of its parts ??
+# ModePilote: unclear. unclear
+
+
+
+
+
+['CurrentSpeed', 'CurrentDir', 'TWS', 'TWA', 'AWS', 'AWA', 'Roll',
+       'Pitch', 'HeadingMag', 'HoG', 'HeadingTrue', 'AirTemp', 'SoG', 'SoS', 'AvgSoS', 'VMG', 'RudderAng', 'Leeway', 'TWD', 'WSoG', 'VoltageDrawn', 'ModePilote', 'Yaw', 'Tacking', 'day', 'hour',
+       'minute', 'second']
