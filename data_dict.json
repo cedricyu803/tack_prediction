@@ -1,0 +1,212 @@
+{
+    "VitCourMes":{
+
+            "name": "CurrentSpeed",
+            "units": "knots",
+            "range": null,
+            "description": " " 
+    },
+    
+    "DirCourMes":{
+
+        "name": "CurrentDir",
+        "units": "degrees",
+        "range": null,
+        "description": " "
+    },
+    
+    "VitVentRl":{
+        
+        "name": "TWS",
+        "units": "knots",
+        "range": null,
+        "description": "True Wind Speed"
+    },
+    
+    "AngVentRl":{
+        
+        "name": "TWA",
+        "units": "degrees",
+        "range": null,
+        "description": "True Wind Angle"
+    },
+    
+    "VitVentApp":{
+        
+        "name": "AWS",
+        "units": "knots",
+        "range": null,
+        "description": "Apparent Wind Speed"
+    },
+    
+    "AngVentApp":{
+        
+        "name": "AWA",
+        "units": "degrees",
+        "range": null,
+        "description": "Apparent Wind Angle"
+    },
+    
+    "3DH_Roulis":{
+       
+        "name": "Roll",
+        "units": "degrees",
+        "range": null,
+        "description": "Roll, also equals to -Heel"
+    },
+
+    "3DH_Tang":{
+
+        "name": "Pitch",
+        "units": "degrees",
+        "range": null,
+        "description": "Pitch angle"
+    },
+    
+    "CapMagPil":{
+        
+        "name": "HeadingMag",
+        "units": "degrees",
+        "range": null,
+        "description": "magnetic heading"
+    },
+    
+    "CapFond":{
+        
+        "name": "HoG",
+        "units": "degrees",
+        "range": null,
+        "description": "heading over ground"
+    },
+    
+    "Route":{
+        
+        "name": "HeadingTrue",
+        "units": "degrees",
+        "range": null,
+        "description": "true heading. True heading - heading over ground = Yaw"
+    },
+    
+    "TempAir":{
+        
+        "name": "AirTemp",
+        "units": "degrees Celcius",
+        "range": null,
+        "description": "air temperature"
+    },
+
+    "Longitude":{
+
+        "name": "Longitude",
+        "units": "degrees",
+        "range": "[0, 360]",
+        "description": "Longitudinal coordinate"
+    },
+
+    "LonDecMin":{
+
+        "name": "LonDecMin",
+        "units": "minutes of angle",
+        "range": "",
+        "description": "Decimals of the longitude minutes"
+    },
+
+    "Latitude":{
+
+        "name": "Latitude",
+        "units": "degrees",
+        "range": "[0, 360]",
+        "description": "Latitudinal coordinate"
+    },
+
+    "LatDecMin":{
+
+        "name": "LatDecMin",
+        "units": "minutes of angle",
+        "range": "",
+        "description": "Decimals of the latitude minutes"
+    },
+
+    "VitFond":{
+
+        "name": "SoG",
+        "units": "knots",
+        "range": null,
+        "description": "Speed over ground"
+    },
+
+    "VitesSurf":{
+
+        "name": "SoS",
+        "units": "knots",
+        "range": null,
+        "description": "Speed over surface"
+    },
+
+    "VitSurfMoy":{
+
+        "name": "AvgSoS",
+        "units": "knots",
+        "range": null,
+        "description": "Average speed over surface"
+    },
+
+    "VMG":{
+
+        "name": "VMG",
+        "units": "knots",
+        "range": null,
+        "description": "Velocity made good. Calculated as Speed over surface * cos(True Wind angle)"
+    },
+
+    "Barre": {
+
+        "name": "RudderAng",
+        "units": "degrees",
+        "range": null, 
+        "description": "Rudder angle"
+    },
+
+    "Derive":{
+
+        "name": "Leeway",
+        "units": "degrees",
+        "range": null,
+        "description": " "
+    },
+
+    "DirVentFnd":{
+
+        "name": "TWD",
+        "units": "degrees",
+        "range": null,
+        "description": "True wind direction"
+    },
+
+    "VitVentFnd":{
+
+        "name": "WSoG",
+        "units": "knots",
+        "range": null,
+        "description": "Wind speed over ground"
+    },
+
+    "TensPilote":{
+
+        "name": "VoltageDrawn",
+        "units": "Volts",
+        "range": null,
+        "description": "Voltage drawn by the system of one of its parts"
+    },
+
+    "ModePilote":{
+
+        "name": "ModePilote",
+        "units": "unclear",
+        "range": "unclear",
+        "description": "unclear"
+    }
+
+
+
+}
