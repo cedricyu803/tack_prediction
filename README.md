@@ -13,3 +13,5 @@ In rolling_forecast_feature_selection.py, we explore feature selection and their
 All in all, the best validation set scores are : F_1: 0.366, F_2: 0.441, F_0.5: 0.314, precision: 0.287, recall: 0.535. Our model in general gives higher recall that precision, i.e. more false positives than false negatives. Re-training the logistic regression model each time only takes less than 2 seconds on the local machine. The low computation costs make it suitable for deployment on a boat where the onboard computational power and Internet access is limited.
 
 Note that we advise that we not use lag features of the target label ('Tacking'), as this would be like having a human sailing instructor onboard telling us when to tack, which the machine takes as input to decide whether it should tell you also to tack. Indeed, we find that including such feature would make our machine learning model almost perfect. But it defeats the purpose: our goal is to build a model that tells us when to tack, without human intervention.
+
+rolling_forecast_master.py is the final script to be used for model deployment.
