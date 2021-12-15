@@ -171,7 +171,7 @@ def preprocessing(df):
     if 'Tacking' in feat_columns:
         labeled = True
         feat_columns.remove('Tacking')
-        # df_['Tacking_lag_1'] = df_['Tacking'].shift(1)
+        # df_['Tacking_lag_1'] = df_['Tacking'].shift(1)  # DO NOT USE 'Tacking_lag_1
     
     for col in feat_columns:
         for i in range(lags):
