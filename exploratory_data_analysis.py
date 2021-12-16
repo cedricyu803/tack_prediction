@@ -58,8 +58,8 @@ File descriptions
 # RudderAng: degrees. Rudder angle
 # Leeway: degrees. 
 
-# VoltageDrawn: Volts. Voltage drawn by the system of one of its parts ??
-# ModePilote: unclear. unclear
+# VoltageDrawn: Volts. Voltage drawn from the boat batteries that power the navigation system and (at night) lights
+# ModePilote: unclear. whether the autopilot is active or not
 
 # Target
 # Tacking: Boolean.
@@ -216,7 +216,7 @@ ax.spines['right'].set_visible(False)
 # plt.savefig('plots/Tacking.png', dpi = 150)
 
 # time series plot
-train_df.plot(x='DateTime', y="Tacking")
+train_df.plot(x='DateTime', y="Tacking", color = 'black')
 ax = plt.gca()
 ax.set_xlabel('Date-Hour')
 ax.set_ylabel('Tacking')
@@ -347,6 +347,113 @@ fig.add_layer(heatmap_layer)
 embed_minimal_html('export.html', views=[fig])
 
 # !!! training set coordinates are localised in the Caribbeans; discard because it does not generalise
+
+#%% VoltageDrawn, ModePilote
+
+train_df['ModePilote'].unique()
+# array([ 5.,  2., nan])
+# binary; will become (0,1) after rescaling by MinMaxScaler
+
+train_df['VoltageDrawn'].describe()
+# count    219839.000000
+# mean         12.417475
+# std           0.570748
+# min          11.100000
+# 25%          12.100000
+# 50%          12.300000
+# 75%          12.500000
+# max          14.200000
+# Name: VoltageDrawn, dtype: float64
+
+
+#!!! time series plots
+
+train_df0 = train_df[['DateTime', 'VoltageDrawn', 'ModePilote', 'Tacking']]
+
+
+train_df0['Tacking_rescaled'] = (train_df0['ModePilote'].max()-train_df0['ModePilote'].min())*train_df0['Tacking'] + train_df0['ModePilote'].min()
+
+fig = plt.figure(dpi = 150)
+ax = plt.gca()
+train_df.plot(x='DateTime', y="ModePilote", ax=ax, label = 'Autopilot Mode', color='green', linewidth=0.8)
+train_df0.plot(x='DateTime', y="Tacking_rescaled", ax=ax, label = 'Tacking', color='black', linewidth=0.8)
+ax = plt.gca()
+ax.set_xlabel('Date-Hour')
+ax.set_ylabel(None)
+# ax.set_ylabel('Direction / degree')
+ax.set_yticks([2,5])
+ax.set_title(None)
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+plt.ylim(1.99,)
+plt.legend(loc='lower right')
+# plt.savefig('plots/ModePilote_tacking', dpi = 150)
+
+
+train_df0['Tacking_rescaled'] = (train_df0['VoltageDrawn'].max()-train_df0['VoltageDrawn'].min())*train_df0['Tacking'] + train_df0['VoltageDrawn'].min()
+
+fig = plt.figure(dpi = 150)
+ax = plt.gca()
+train_df.plot(x='DateTime', y="VoltageDrawn", ax=ax, label = 'Voltage Drawn from batteries', color='gold', linewidth=0.8)
+train_df0.plot(x='DateTime', y="Tacking_rescaled", ax=ax, label = 'Tacking', color='black', linewidth=0.8)
+ax = plt.gca()
+ax.set_xlabel('Date-Hour')
+# ax.set_ylabel(None)
+ax.set_ylabel('Volts')
+# ax.set_yticks([train_df0['VoltageDrawn'].min(),train_df0['VoltageDrawn'].max()])
+ax.set_title(None)
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+plt.ylim(train_df0['VoltageDrawn'].min(),)
+plt.legend(loc='lower right')
+# plt.savefig('plots/VoltageDrawn_tacking', dpi = 150)
+
+
+train_df_tack = [train_df.iloc[tack_start[i]-2*(tack_end[i]-tack_start[i]):tack_end[i]+2*(tack_end[i]-tack_start[i])] for i in range(len(tack_start))]
+
+for i in range(len(train_df_tack)):
+    train_df_tack[i]['Tacking_rescaled'] = 3*train_df_tack[i]['Tacking']+2
+
+for i in range(len(train_df_tack)):
+    fig = plt.figure(dpi = 150)
+    ax = plt.gca()
+    train_df_tack[i].plot(x='DateTime', y="ModePilote", ax=ax, label = 'Autopilot Mode', color='green', linewidth=0.8)
+    train_df_tack[i].plot(x='DateTime', y="Tacking_rescaled", ax=ax, label = 'Tacking', color='black', linewidth=0.8)
+    ax = plt.gca()
+    ax.set_xlabel('Date-Hour')
+    ax.set_ylabel(None)
+    # ax.set_ylabel('Direction / degree')
+    ax.set_yticks([2,5])
+    ax.set_title(None)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    plt.ylim(1.99,)
+    plt.legend(loc='lower right')
+    plt.savefig('plots/ModePilote_tacking/Figure_'+str(i+1), dpi = 150)
+
+
+for i in range(len(train_df_tack)):
+    train_df_tack[i]['Tacking_rescaled'] = (train_df_tack[i]['VoltageDrawn'].max()-train_df_tack[i]['VoltageDrawn'].min())*train_df_tack[i]['Tacking'] + train_df_tack[i]['VoltageDrawn'].min()
+
+for i in range(len(train_df_tack)):
+# for i in range(1):
+    fig = plt.figure(dpi = 150)
+    ax = plt.gca()
+    train_df_tack[i].plot(x='DateTime', y="VoltageDrawn", ax=ax, label = 'Voltage Drawn from batteries', color='gold', linewidth=0.8)
+    train_df_tack[i].plot(x='DateTime', y="Tacking_rescaled", ax=ax, label = 'Tacking', color='black', linewidth=0.8)
+    ax = plt.gca()
+    ax.set_xlabel('Date-Hour')
+    # ax.set_ylabel(None)
+    ax.set_ylabel('Volts')
+    # ax.set_yticks([train_df0['VoltageDrawn'].min(),train_df0['VoltageDrawn'].max()])
+    ax.set_title(None)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    plt.ylim(train_df_tack[i]['VoltageDrawn'].min(),)
+    plt.legend(loc='lower right')
+    plt.savefig('plots/VoltageDrawn_tacking/Figure_'+str(i+1), dpi = 150)
+
+
 
 
 #%% CurrentSpeed, CurrentDir

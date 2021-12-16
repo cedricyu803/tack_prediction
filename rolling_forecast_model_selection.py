@@ -54,8 +54,8 @@ File descriptions
 # RudderAng: degrees. Rudder angle
 # Leeway: degrees. 
 
-# VoltageDrawn: Volts. Voltage drawn by the system of one of its parts ??
-# ModePilote: unclear. unclear
+# VoltageDrawn: Volts. Voltage drawn from the boat batteries that power the navigation system and (at night) lights
+# ModePilote: unclear. whether the autopilot is active or not
 
 # Target
 # Tacking: Boolean.

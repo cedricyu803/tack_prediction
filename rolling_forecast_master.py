@@ -54,8 +54,8 @@ File descriptions
 # RudderAng: degrees. Rudder angle
 # Leeway: degrees. 
 
-# VoltageDrawn: Volts. Voltage drawn by the system of one of its parts ??
-# ModePilote: unclear. unclear
+# VoltageDrawn: Volts. Voltage drawn from the boat batteries that power the navigation system and (at night) lights
+# ModePilote: unclear. whether the autopilot is active or not
 
 # Target
 # Tacking: Boolean.
@@ -171,6 +171,7 @@ class_weight = {0: 5 / (2 * 4), 1: 5 / (2 * 1)}
 train_df = pd.read_csv('test_data.csv')
 # train_df_raw = pd.read_csv('test_data.csv')
 train_df['DateTime'] = pd.to_datetime(train_df['DateTime'])
+# train_df = train_df.iloc[21600:]
 train_df_DateTime = train_df['DateTime']
 # train_df_raw.shape
 
@@ -414,7 +415,7 @@ validation_DateTime = train_df_DateTime.iloc[window_size_train:window_size_train
 y_valid = pd.concat([X_chunk['Tacking'] for X_chunk in Xy_rest_partitioned]).to_numpy()
 
 # !!!
-print('\n lags = {}'.format(lags))
+print('\nlags = {}'.format(lags))
 print('\nF_beta score (beta=1): ', fbeta_score(y_valid, rolling_forecast, beta=1))
 print('F_beta score (beta=2): ', fbeta_score(y_valid, rolling_forecast, beta=2))
 print('F_beta score (beta=0.5): ', fbeta_score(y_valid, rolling_forecast, beta=0.5))
