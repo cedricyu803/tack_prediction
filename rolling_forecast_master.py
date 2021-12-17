@@ -122,6 +122,7 @@ def fbeta_eval(y_pred, dtrain):
 
 from sklearn.linear_model import LogisticRegression
 from xgboost import XGBClassifier
+import lightgbm as lgb
 
 #%% tensorflow
 
@@ -169,6 +170,9 @@ window_size_valid = 1
 # regularisation hyperparameter C (smaller means more regularisation)
 C=100.
 
+# XGBoost
+scale_pos_weight = 5.
+
 # hyperparameters for LSTM
 # learning_rate = 5e-6
 # epochs = 10
@@ -207,8 +211,8 @@ train_df['day'] = train_df['DateTime'].apply(get_day)
 train_df['hour'] = train_df['DateTime'].apply(get_hour)
 train_df['minute'] = train_df['DateTime'].apply(get_minute)
 
-train_df_DateTime = train_df[['day', 'hour', 'minute', 'DateTime']]
-train_df_DateTime = train_df_DateTime.groupby(['day', 'hour', 'minute']).agg(np.min)
+train_df_DateTime0 = train_df[['day', 'hour', 'minute', 'DateTime']]
+train_df_DateTime0 = train_df_DateTime0.groupby(['day', 'hour', 'minute']).agg(np.min)
 
 train_df = train_df[['day', 'hour', 'minute'] + cols_to_keep]
 
@@ -222,7 +226,7 @@ train_df_cat = train_df[['day', 'hour', 'minute'] + cat_cols].groupby(['day', 'h
 train_df = pd.concat([train_df_num, train_df_cat], axis = 1)
 train_df = train_df.reset_index()
 train_df = train_df.drop(['day', 'hour', 'minute'], axis = 1)
-train_df_DateTime = train_df_DateTime.reset_index().drop(['day', 'hour', 'minute'], axis = 1)
+train_df_DateTime0 = train_df_DateTime0.reset_index().drop(['day', 'hour', 'minute'], axis = 1)
 
 # train_df.to_csv('test_data_by_minute.csv')
 
@@ -287,8 +291,10 @@ train-test split: sliding training window is 18 hours = 1080 minutes, test=predi
 """
 
 # preprocess dataset
-train_df_processed = preprocessing(train_df)
-train_df_DateTime = train_df_DateTime.iloc[lags:]
+train_df_processed0 = preprocessing(train_df)
+# defragment dataframe
+train_df_processed = train_df_processed0.copy()
+del train_df_processed0
 
 # initial training set
 Xy_train = train_df_processed.iloc[:window_size_train]
@@ -302,6 +308,7 @@ Rolling forecast
 """
 
 #!!! Start Here
+train_df_DateTime = train_df_DateTime0.iloc[lags:]
 # rolling preprocessed training set
 history_rolling = Xy_train.copy()
 # rolling forecast predictions
@@ -314,6 +321,7 @@ histories_nn = []
 # initialise one model, then re-train the same model in each sliding window
 use_logistic = False
 use_XGBoost = False
+use_lgb = False
 use_nn = False
 
 # logistic regression
@@ -321,8 +329,13 @@ use_nn = False
 # model = LogisticRegression(max_iter = 10000, class_weight='balanced', C=C)
 
 # XGBoost
-use_XGBoost = True
-model = XGBClassifier(scale_pos_weight = 5., verbosity=0)
+# use_XGBoost = True
+# model = XGBClassifier(scale_pos_weight = scale_pos_weight, verbosity=0)
+
+# lightGBM
+use_lgb = True
+model = lgb.LGBMClassifier(class_weight='balanced')
+
 
 # neural network
 # use_nn = True
@@ -381,9 +394,17 @@ for i in tqdm(range(len(Xy_rest))):
     elif use_XGBoost:
         model.fit(X_train_roll_shuffled_scaled, y_train_roll_shuffled, 
                   eval_set = [(X_train_roll_shuffled_scaled, y_train_roll_shuffled)], 
-                  eval_metric=fbeta_eval,
-                  early_stopping_rounds = 30, 
-                  verbose=0)
+                   eval_metric=fbeta_eval,
+                   early_stopping_rounds = 30, 
+                   verbose=0)
+        # forecast
+        y_pred = model.predict(X_valid_roll_scaled)
+        
+    elif use_lgb:
+        model.fit(X_train_roll_shuffled_scaled, y_train_roll_shuffled, 
+                  eval_set = [(X_train_roll_shuffled_scaled, y_train_roll_shuffled)], 
+                  eval_metric='auc',
+                   verbose=0)
         # forecast
         y_pred = model.predict(X_valid_roll_scaled)
         
@@ -418,6 +439,11 @@ for i in tqdm(range(len(Xy_rest))):
 # 100%|██████████| 2249/2249 [23:43<00:00,  1.58it/s]
 # lag 10
 # 100%|██████████| 2244/2244 [37:16<00:00,  1.00it/s]
+# lightGBM
+# lag 5
+# 100%|██████████| 2249/2249 [08:56<00:00,  4.19it/s]
+# lag 10
+# 100%|██████████| 2244/2244 [16:04<00:00,  2.33it/s]
 
 
 #%% Model performance and predictions
@@ -462,6 +488,29 @@ print('Recall score: ', recall_score(y_valid, rolling_forecast))
 #  [  17  144]]
 # Precision score:  0.8181818181818182
 # Recall score:  0.8944099378881988
+# lightGBM
+# lags = 5
+# F_beta score (beta=1):  0.8882175226586102
+# F_beta score (beta=2):  0.9029484029484031
+# F_beta score (beta=0.5):  0.873959571938169
+# AUC score:  0.9510140762951856
+# [[2065   23]
+#  [  14  147]]
+# Precision score:  0.8647058823529412
+# Recall score:  0.9130434782608695
+# lags = 10
+# F_beta score (beta=1):  0.8957055214723927
+# F_beta score (beta=2):  0.9023485784919655
+# F_beta score (beta=0.5):  0.8891595615103532
+# AUC score:  0.9488554193515683
+# [[2064   19]
+#  [  15  146]]
+# Precision score:  0.8848484848484849
+# Recall score:  0.906832298136646
+
+
+
+
 
 
 """
@@ -490,7 +539,7 @@ ax.set_yticks([0, 1])
 ax.set_title(None)
 ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
-# plt.savefig('predictions/good_features_lag10_XGBoost_rolling_windows_18hrs_1_min.png')
+# plt.savefig('predictions/good_features_lag10_lightGBM_rolling_windows_18hrs_1_min.png')
 
 
 # free VRAM after using tensorflow
@@ -555,6 +604,175 @@ XGBC_model_feature_importances = XGBC_model_feature_importances / XGBC_model_fea
 # TWA_lag_5                0.000187
 # CurrentDir_cos_lag_4     0.000000
 # Yaw_lag_2                0.000000
+
+#%% lightGBM: feature importances [with lag 5 features]
+
+lightGBM_model_feature_importances = pd.Series(model.feature_importances_, index = train_df_processed.drop(['Tacking'],axis=1).columns).sort_values(ascending = False)
+lightGBM_model_feature_importances = lightGBM_model_feature_importances / lightGBM_model_feature_importances.max()
+
+# CurrentSpeed             1.000000
+# CurrentSpeed_lag_1       0.970238
+# CurrentSpeed_lag_2       0.922619
+# CurrentSpeed_lag_3       0.916667
+# HoG_cos_lag_2            0.785714
+# CurrentSpeed_lag_5       0.654762
+# AvgSoS                   0.619048
+# HoG_cos_lag_1            0.494048
+# AirTemp                  0.434524
+# Yaw_lag_5                0.386905
+# CurrentSpeed_lag_4       0.351190
+# VoltageDrawn             0.303571
+# Yaw_lag_2                0.285714
+# AirTemp_lag_4            0.267857
+# VoltageDrawn_lag_4       0.255952
+# AirTemp_lag_5            0.250000
+# TWD_cos_lag_5            0.238095
+# Yaw_lag_4                0.238095
+# HeadingMag_sin_lag_2     0.238095
+# AvgSoS_lag_5             0.226190
+# TWD_cos_lag_3            0.220238
+# HeadingMag_cos_lag_2     0.220238
+# HeadingTrue_sin_lag_2    0.214286
+# Yaw_lag_3                0.214286
+# HeadingMag_sin_lag_3     0.196429
+# HeadingMag_cos           0.190476
+# VoltageDrawn_lag_5       0.184524
+# HeadingTrue_cos_lag_5    0.184524
+# AWA_lag_5                0.172619
+# HoG_cos                  0.154762
+# AvgSoS_lag_4             0.148810
+# VMG_lag_1                0.142857
+# VoltageDrawn_lag_1       0.136905
+# HeadingMag_cos_lag_1     0.130952
+# HeadingTrue_sin_lag_1    0.130952
+# AvgSoS_lag_2             0.125000
+# VMG_lag_2                0.119048
+# TWD_cos                  0.119048
+# Yaw                      0.107143
+# HoG_cos_lag_5            0.095238
+# TWS_lag_4                0.095238
+# HeadingTrue_cos_lag_4    0.089286
+# TWD_sin_lag_1            0.089286
+# AWA_lag_4                0.077381
+# AWA_lag_3                0.077381
+# SoG_lag_1                0.077381
+# VoltageDrawn_lag_2       0.071429
+# VMG_lag_3                0.071429
+# AirTemp_lag_2            0.071429
+# Leeway_lag_2             0.071429
+# AvgSoS_lag_3             0.071429
+# AWS_lag_2                0.071429
+# Pitch_lag_3              0.065476
+# TWS_lag_1                0.065476
+# VoltageDrawn_lag_3       0.065476
+# TWD_sin_lag_3            0.059524
+# CurrentDir_sin_lag_1     0.059524
+# Leeway_lag_1             0.059524
+# SoS                      0.053571
+# SoG_lag_5                0.053571
+# HeadingMag_sin_lag_5     0.053571
+# VMG_lag_4                0.053571
+# HeadingTrue_cos_lag_3    0.053571
+# TWA_lag_2                0.047619
+# AirTemp_lag_1            0.047619
+# Pitch_lag_1              0.047619
+# Roll_lag_3               0.047619
+# Roll_lag_2               0.047619
+# AWS                      0.047619
+# AWS_lag_4                0.047619
+# AvgSoS_lag_1             0.047619
+# WSoG_lag_2               0.041667
+# SoS_lag_3                0.041667
+# TWS_lag_5                0.041667
+# VMG                      0.041667
+# AWA_lag_2                0.041667
+# SoS_lag_1                0.041667
+# SoG_lag_4                0.041667
+# Pitch_lag_5              0.041667
+# TWA                      0.035714
+# HeadingTrue_sin_lag_4    0.035714
+# TWA_lag_3                0.035714
+# HeadingTrue_cos_lag_2    0.035714
+# CurrentDir_sin_lag_2     0.035714
+# HoG_sin_lag_3            0.035714
+# TWD_cos_lag_2            0.035714
+# Pitch                    0.035714
+# TWD_sin_lag_4            0.029762
+# HoG_cos_lag_4            0.029762
+# HeadingTrue_cos          0.029762
+# SoG                      0.029762
+# AWS_lag_3                0.029762
+# Roll_lag_1               0.029762
+# TWS                      0.029762
+# TWA_lag_5                0.029762
+# Pitch_lag_4              0.029762
+# HeadingMag_sin_lag_4     0.029762
+# CurrentDir_cos           0.023810
+# HeadingTrue_cos_lag_1    0.023810
+# Yaw_lag_1                0.023810
+# HeadingMag_sin           0.023810
+# SoG_lag_3                0.023810
+# TWS_lag_3                0.023810
+# HoG_cos_lag_3            0.023810
+# HeadingTrue_sin_lag_3    0.017857
+# CurrentDir_sin           0.017857
+# CurrentDir_cos_lag_1     0.017857
+# AWS_lag_5                0.017857
+# Roll_lag_4               0.017857
+# WSoG_lag_5               0.017857
+# HoG_sin_lag_1            0.017857
+# HoG_sin                  0.017857
+# Leeway_lag_4             0.017857
+# HoG_sin_lag_4            0.017857
+# Leeway                   0.017857
+# TWS_lag_2                0.017857
+# SoS_lag_2                0.017857
+# Roll                     0.017857
+# TWD_cos_lag_4            0.011905
+# TWD_cos_lag_1            0.011905
+# HoG_sin_lag_5            0.011905
+# SoS_lag_4                0.011905
+# Roll_lag_5               0.011905
+# Leeway_lag_3             0.011905
+# HeadingMag_cos_lag_3     0.011905
+# CurrentDir_sin_lag_4     0.011905
+# SoG_lag_2                0.011905
+# TWA_lag_4                0.011905
+# AirTemp_lag_3            0.011905
+# HeadingTrue_sin          0.011905
+# TWD_sin                  0.011905
+# Pitch_lag_2              0.011905
+# WSoG_lag_3               0.011905
+# WSoG_lag_1               0.011905
+# AWS_lag_1                0.005952
+# HeadingMag_cos_lag_5     0.005952
+# HeadingMag_cos_lag_4     0.005952
+# HeadingMag_sin_lag_1     0.005952
+# HeadingTrue_sin_lag_5    0.005952
+# CurrentDir_cos_lag_2     0.005952
+# AWA                      0.005952
+# VMG_lag_5                0.005952
+# WSoG                     0.005952
+# TWD_sin_lag_2            0.005952
+# CurrentDir_cos_lag_5     0.005952
+# CurrentDir_cos_lag_4     0.005952
+# WSoG_lag_4               0.005952
+# SoS_lag_5                0.005952
+# HoG_sin_lag_2            0.005952
+# ModePilote_lag_3         0.000000
+# ModePilote               0.000000
+# ModePilote_lag_1         0.000000
+# ModePilote_lag_2         0.000000
+# TWA_lag_1                0.000000
+# ModePilote_lag_4         0.000000
+# ModePilote_lag_5         0.000000
+# CurrentDir_sin_lag_3     0.000000
+# CurrentDir_sin_lag_5     0.000000
+# CurrentDir_cos_lag_3     0.000000
+# AWA_lag_1                0.000000
+# TWD_sin_lag_5            0.000000
+# Leeway_lag_5             0.000000
+# dtype: float64
 
 
 #%% XGBoost: feature importances [with lag 10 features]
@@ -862,7 +1080,308 @@ XGBC_model_feature_importances = XGBC_model_feature_importances / XGBC_model_fea
 # dtype: float32
 
 
+#%% lightGBM: feature importances [with lag 10 features]
 
+lightGBM_model_feature_importances = pd.Series(model.feature_importances_, index = train_df_processed.drop(['Tacking'],axis=1).columns).sort_values(ascending = False)
+lightGBM_model_feature_importances = lightGBM_model_feature_importances / lightGBM_model_feature_importances.max()
 
+# CurrentSpeed_lag_10       1.000000
+# Yaw_lag_8                 0.815068
+# Yaw_lag_5                 0.780822
+# Yaw_lag_9                 0.753425
+# CurrentSpeed_lag_9        0.746575
+# CurrentSpeed_lag_8        0.657534
+# HoG_cos_lag_2             0.650685
+# CurrentSpeed_lag_6        0.650685
+# CurrentSpeed_lag_7        0.602740
+# Yaw_lag_6                 0.582192
+# Yaw_lag_7                 0.575342
+# HeadingTrue_sin_lag_10    0.561644
+# HeadingTrue_sin_lag_9     0.561644
+# CurrentSpeed              0.520548
+# CurrentSpeed_lag_2        0.438356
+# CurrentDir_sin            0.397260
+# HeadingMag_sin_lag_6      0.397260
+# HeadingTrue_cos_lag_2     0.383562
+# AvgSoS                    0.369863
+# HeadingMag_sin_lag_5      0.369863
+# CurrentSpeed_lag_5        0.356164
+# AirTemp                   0.321918
+# HoG_cos_lag_6             0.294521
+# AvgSoS_lag_7              0.287671
+# CurrentSpeed_lag_1        0.273973
+# CurrentSpeed_lag_3        0.205479
+# HeadingTrue_sin_lag_7     0.157534
+# CurrentSpeed_lag_4        0.136986
+# VoltageDrawn_lag_1        0.130137
+# AvgSoS_lag_3              0.130137
+# HeadingMag_cos_lag_4      0.123288
+# VoltageDrawn_lag_4        0.123288
+# Yaw_lag_3                 0.123288
+# Leeway_lag_6              0.116438
+# TWS_lag_1                 0.116438
+# VoltageDrawn              0.116438
+# VoltageDrawn_lag_2        0.109589
+# VoltageDrawn_lag_10       0.102740
+# Yaw_lag_4                 0.102740
+# AirTemp_lag_1             0.095890
+# VoltageDrawn_lag_8        0.095890
+# AWA_lag_2                 0.095890
+# AvgSoS_lag_1              0.095890
+# AirTemp_lag_5             0.089041
+# Leeway                    0.082192
+# HeadingTrue_sin_lag_4     0.075342
+# AvgSoS_lag_2              0.068493
+# VoltageDrawn_lag_5        0.068493
+# AirTemp_lag_6             0.068493
+# AirTemp_lag_9             0.068493
+# VoltageDrawn_lag_3        0.061644
+# AirTemp_lag_10            0.061644
+# Yaw_lag_2                 0.061644
+# TWD_sin_lag_9             0.061644
+# HoG_sin_lag_1             0.061644
+# VoltageDrawn_lag_9        0.061644
+# AvgSoS_lag_9              0.061644
+# AWA_lag_7                 0.054795
+# Roll_lag_3                0.054795
+# Pitch_lag_9               0.047945
+# Yaw_lag_10                0.047945
+# AirTemp_lag_2             0.047945
+# TWS_lag_4                 0.047945
+# AvgSoS_lag_5              0.047945
+# Yaw                       0.047945
+# AirTemp_lag_4             0.047945
+# CurrentDir_sin_lag_9      0.047945
+# AirTemp_lag_3             0.041096
+# TWS                       0.041096
+# AWA_lag_8                 0.041096
+# HoG_sin                   0.041096
+# TWD_cos_lag_4             0.041096
+# HeadingTrue_cos_lag_9     0.041096
+# Yaw_lag_1                 0.041096
+# TWS_lag_3                 0.041096
+# VMG_lag_3                 0.041096
+# CurrentDir_sin_lag_4      0.041096
+# SoG_lag_7                 0.041096
+# SoG_lag_10                0.041096
+# Leeway_lag_10             0.034247
+# AvgSoS_lag_8              0.034247
+# SoG_lag_3                 0.034247
+# SoG_lag_4                 0.034247
+# SoS_lag_3                 0.034247
+# Pitch_lag_1               0.034247
+# HoG_sin_lag_5             0.034247
+# AWA_lag_4                 0.034247
+# CurrentDir_cos_lag_10     0.034247
+# TWD_sin_lag_4             0.034247
+# CurrentDir_cos_lag_1      0.034247
+# SoS_lag_6                 0.034247
+# AWA_lag_10                0.034247
+# TWA_lag_5                 0.034247
+# HoG_sin_lag_10            0.034247
+# AvgSoS_lag_4              0.027397
+# CurrentDir_cos            0.027397
+# SoG_lag_5                 0.027397
+# CurrentDir_cos_lag_8      0.027397
+# CurrentDir_cos_lag_6      0.027397
+# TWA_lag_9                 0.027397
+# HeadingTrue_sin_lag_2     0.027397
+# HoG_sin_lag_7             0.027397
+# HoG_cos_lag_3             0.027397
+# HeadingTrue_sin_lag_5     0.027397
+# VMG_lag_7                 0.027397
+# Roll_lag_1                0.027397
+# Pitch_lag_8               0.027397
+# VMG_lag_10                0.027397
+# VoltageDrawn_lag_7        0.027397
+# Pitch_lag_5               0.027397
+# Leeway_lag_7              0.027397
+# TWD_cos_lag_3             0.027397
+# AvgSoS_lag_6              0.027397
+# HeadingMag_cos_lag_8      0.020548
+# TWD_sin_lag_10            0.020548
+# AvgSoS_lag_10             0.020548
+# CurrentDir_cos_lag_2      0.020548
+# HeadingTrue_cos_lag_4     0.020548
+# HeadingMag_cos_lag_2      0.020548
+# HoG_sin_lag_2             0.020548
+# Leeway_lag_9              0.020548
+# TWD_cos_lag_7             0.020548
+# HeadingTrue_cos_lag_10    0.020548
+# AirTemp_lag_8             0.020548
+# Roll                      0.020548
+# AirTemp_lag_7             0.020548
+# AWS_lag_3                 0.020548
+# HeadingMag_cos            0.020548
+# TWA_lag_8                 0.020548
+# SoS                       0.020548
+# AWS_lag_2                 0.020548
+# AWA_lag_1                 0.020548
+# AWA                       0.020548
+# SoS_lag_4                 0.020548
+# SoS_lag_5                 0.020548
+# AWA_lag_5                 0.020548
+# AWA_lag_6                 0.020548
+# CurrentDir_sin_lag_8      0.013699
+# TWA_lag_6                 0.013699
+# CurrentDir_sin_lag_10     0.013699
+# TWA_lag_4                 0.013699
+# SoS_lag_7                 0.013699
+# CurrentDir_sin_lag_5      0.013699
+# CurrentDir_sin_lag_3      0.013699
+# TWD_sin_lag_8             0.013699
+# AWS_lag_5                 0.013699
+# AWS_lag_6                 0.013699
+# AWS_lag_8                 0.013699
+# TWD_sin_lag_5             0.013699
+# HoG_sin_lag_8             0.013699
+# TWD_cos_lag_10            0.013699
+# HeadingMag_cos_lag_1      0.013699
+# HeadingTrue_cos_lag_6     0.013699
+# HeadingTrue_cos_lag_5     0.013699
+# HeadingTrue_cos_lag_1     0.013699
+# SoG                       0.013699
+# HeadingTrue_sin_lag_6     0.013699
+# HeadingMag_cos_lag_5      0.013699
+# HeadingMag_sin_lag_8      0.013699
+# TWS_lag_8                 0.013699
+# HeadingMag_sin_lag_3      0.013699
+# HeadingMag_sin_lag_2      0.013699
+# HoG_cos_lag_10            0.013699
+# HoG_cos_lag_8             0.013699
+# Roll_lag_7                0.013699
+# HoG_sin_lag_3             0.013699
+# Roll_lag_6                0.013699
+# Leeway_lag_2              0.013699
+# WSoG_lag_3                0.013699
+# Roll_lag_10               0.013699
+# SoG_lag_2                 0.013699
+# Pitch_lag_2               0.013699
+# WSoG_lag_9                0.013699
+# Pitch_lag_7               0.013699
+# SoG_lag_9                 0.013699
+# Leeway_lag_1              0.013699
+# WSoG_lag_2                0.013699
+# VMG_lag_4                 0.006849
+# CurrentDir_sin_lag_6      0.006849
+# TWS_lag_6                 0.006849
+# HeadingMag_sin_lag_1      0.006849
+# VMG_lag_5                 0.006849
+# SoS_lag_8                 0.006849
+# CurrentDir_cos_lag_5      0.006849
+# TWA_lag_7                 0.006849
+# CurrentDir_cos_lag_7      0.006849
+# CurrentDir_cos_lag_9      0.006849
+# HeadingMag_cos_lag_6      0.006849
+# TWD_sin_lag_1             0.006849
+# SoG_lag_1                 0.006849
+# HeadingMag_sin_lag_4      0.006849
+# HeadingMag_cos_lag_3      0.006849
+# TWD_sin_lag_7             0.006849
+# Leeway_lag_3              0.006849
+# TWA_lag_3                 0.006849
+# TWA_lag_2                 0.006849
+# HeadingMag_sin_lag_10     0.006849
+# Roll_lag_9                0.006849
+# WSoG_lag_1                0.006849
+# HeadingMag_sin_lag_7      0.006849
+# TWS_lag_10                0.006849
+# HeadingTrue_cos_lag_3     0.006849
+# TWA                       0.006849
+# Roll_lag_5                0.006849
+# VoltageDrawn_lag_6        0.006849
+# Roll_lag_4                0.006849
+# Roll_lag_2                0.006849
+# WSoG_lag_8                0.006849
+# AWA_lag_3                 0.006849
+# WSoG_lag_7                0.006849
+# CurrentDir_sin_lag_2      0.006849
+# AWS                       0.006849
+# HoG_cos_lag_9             0.006849
+# WSoG_lag_4                0.006849
+# SoG_lag_8                 0.006849
+# SoS_lag_2                 0.006849
+# CurrentDir_sin_lag_1      0.006849
+# HeadingTrue_sin_lag_3     0.006849
+# VMG_lag_6                 0.006849
+# Pitch                     0.006849
+# HeadingTrue_sin_lag_8     0.006849
+# AWS_lag_4                 0.006849
+# HoG_sin_lag_6             0.006849
+# SoG_lag_6                 0.006849
+# HeadingMag_sin            0.000000
+# VMG_lag_8                 0.000000
+# HoG_cos                   0.000000
+# HoG_cos_lag_7             0.000000
+# Pitch_lag_10              0.000000
+# Roll_lag_8                0.000000
+# HeadingMag_cos_lag_9      0.000000
+# VMG_lag_2                 0.000000
+# HeadingMag_sin_lag_9      0.000000
+# HeadingTrue_cos_lag_8     0.000000
+# HeadingTrue_cos_lag_7     0.000000
+# SoS_lag_9                 0.000000
+# SoS_lag_10                0.000000
+# SoS_lag_1                 0.000000
+# VMG                       0.000000
+# WSoG                      0.000000
+# HeadingTrue_sin_lag_1     0.000000
+# HeadingMag_cos_lag_10     0.000000
+# HoG_cos_lag_4             0.000000
+# ModePilote                0.000000
+# HeadingMag_cos_lag_7      0.000000
+# TWD_sin                   0.000000
+# TWD_cos                   0.000000
+# VMG_lag_1                 0.000000
+# HoG_cos_lag_5             0.000000
+# TWD_cos_lag_6             0.000000
+# HeadingTrue_sin           0.000000
+# ModePilote_lag_4          0.000000
+# AWS_lag_1                 0.000000
+# Leeway_lag_8              0.000000
+# CurrentDir_sin_lag_7      0.000000
+# ModePilote_lag_10         0.000000
+# ModePilote_lag_9          0.000000
+# ModePilote_lag_8          0.000000
+# ModePilote_lag_7          0.000000
+# ModePilote_lag_6          0.000000
+# ModePilote_lag_5          0.000000
+# ModePilote_lag_3          0.000000
+# CurrentDir_cos_lag_3      0.000000
+# ModePilote_lag_2          0.000000
+# ModePilote_lag_1          0.000000
+# WSoG_lag_5                0.000000
+# AWS_lag_7                 0.000000
+# WSoG_lag_6                0.000000
+# AWS_lag_9                 0.000000
+# AWS_lag_10                0.000000
+# AWA_lag_9                 0.000000
+# WSoG_lag_10               0.000000
+# TWA_lag_10                0.000000
+# Pitch_lag_3               0.000000
+# HeadingTrue_cos           0.000000
+# TWD_cos_lag_8             0.000000
+# HoG_cos_lag_1             0.000000
+# TWS_lag_2                 0.000000
+# HoG_sin_lag_9             0.000000
+# VMG_lag_9                 0.000000
+# TWS_lag_5                 0.000000
+# HoG_sin_lag_4             0.000000
+# TWS_lag_7                 0.000000
+# Pitch_lag_6               0.000000
+# TWD_cos_lag_9             0.000000
+# TWS_lag_9                 0.000000
+# Pitch_lag_4               0.000000
+# TWD_cos_lag_5             0.000000
+# TWA_lag_1                 0.000000
+# TWD_cos_lag_2             0.000000
+# TWD_cos_lag_1             0.000000
+# TWD_sin_lag_6             0.000000
+# Leeway_lag_4              0.000000
+# Leeway_lag_5              0.000000
+# TWD_sin_lag_3             0.000000
+# TWD_sin_lag_2             0.000000
+# CurrentDir_cos_lag_4      0.000000
+# dtype: float64
 
 
