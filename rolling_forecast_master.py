@@ -75,7 +75,7 @@ File descriptions
 """
 1. load labeled dataset, aggregate by minute and keep only columns we want to use
 2. Rolling forecast: 
-    sliding training window is 18 hours = 1080 minutes, validation window is 1 minute
+    sliding training window is 18 hours = 1080 minutes, validation window is defaulted to 1 minute
     preprocessing
     fit model: XGBoost
     compute evaluation metrics
@@ -90,6 +90,7 @@ pd.set_option('display.max_columns', 500)
 # pd.set_option('display.width', 1000)
 pd.options.mode.chained_assignment = None  # default='warn' # ignores warning about dropping columns inplace
 import numpy as np
+import math
 import matplotlib.pyplot as plt
 import gc
 
@@ -155,16 +156,14 @@ ang_list = ['TWA', 'AWA', 'Pitch', 'Roll', 'Yaw', 'Leeway']
 # not including present time step
 # lags = 5 for recall oriented
 # lags = 10 for precision oriented
-lags = 10
+lags = 5
 
 # size of sliding windows in minutes
 # 18 hours
 window_size_train = 1080
-# validation (test) window is fixed to 1 minute; DO NOT change it
-# we are not forecasting other varibles. given what we know, we can only predict one step ahead.
+# default validation (test) window is 1 minute
+# we are not forecasting other varibles. given what we know, we can only predict one step ahead. But we can choose how often to re-train our model
 window_size_valid = 1
-# 1 minute
-# window_size_test = 1
 
 # logistic regression
 # regularisation hyperparameter C (smaller means more regularisation)
@@ -287,7 +286,7 @@ def preprocessing(df):
 #%% Rolling forecast
 
 """
-train-test split: sliding training window is 18 hours = 1080 minutes, test=prediction window is 1 minute.
+train-test split: sliding training window is 18 hours = 1080 minutes, test=prediction window is defaulted to 1 minute.
 """
 
 # preprocess dataset
@@ -353,9 +352,14 @@ model = lgb.LGBMClassifier(class_weight='balanced')
 
 
 # for i in range(1):
-for i in tqdm(range(len(Xy_rest))):
+# for i in tqdm(range(len(Xy_rest))):
+for i in tqdm(range(math.ceil(len(Xy_rest)/ window_size_valid))):
     
-    Xy_valid_roll = Xy_rest.iloc[i:i+window_size_valid]
+    window_end = (i+1)*window_size_valid
+    if window_end > len(Xy_rest):
+        window_end = len(Xy_rest)
+    
+    Xy_valid_roll = Xy_rest.iloc[i*window_size_valid:window_end]
     
     # separate features and labels
     X_valid_roll = Xy_valid_roll.drop(['Tacking'], axis = 1)
@@ -469,6 +473,7 @@ print('Precision score: ', precision_score(y_valid, rolling_forecast))
 print('Recall score: ', recall_score(y_valid, rolling_forecast))
 
 # rolling forecast
+# prediction window = 1 minute
 # XGBoost
 # lags = 5
 # F_beta score (beta=1):  0.8333333333333334
@@ -509,13 +514,52 @@ print('Recall score: ', recall_score(y_valid, rolling_forecast))
 # Recall score:  0.906832298136646
 
 
-
-
-
+# prediction window = 5 minutes
+# lags = 5
+# F_beta score (beta=1):  0.8398791540785498
+# F_beta score (beta=2):  0.8538083538083538
+# F_beta score (beta=0.5):  0.8263971462544589
+# AUC score:  0.9242536469860307
+# [[2057   31]
+#  [  22  139]]
+# Precision score:  0.8176470588235294
+# Recall score:  0.8633540372670807
+# prediction window = 10 minutes
+# lightGBM
+# lags = 5
+# F_beta score (beta=1):  0.7904191616766467
+# F_beta score (beta=2):  0.8078335373317014
+# F_beta score (beta=0.5):  0.7737397420867526
+# AUC score:  0.9001198805359225
+# [[2047   41]
+#  [  29  132]]
+# Precision score:  0.7630057803468208
+# Recall score:  0.8198757763975155
+# prediction window = 30 minutes
+# lags = 5
+# F_beta score (beta=1):  0.6408839779005525
+# F_beta score (beta=2):  0.6863905325443787
+# F_beta score (beta=0.5):  0.6010362694300518
+# AUC score:  0.8398940410747009
+# [[2003   85]
+#  [  45  116]]
+# Precision score:  0.5771144278606966
+# Recall score:  0.7204968944099379
+# prediction window = 60 minutes
+# lags = 5
+# F_beta score (beta=1):  0.5277777777777778
+# F_beta score (beta=2):  0.6229508196721311
+# F_beta score (beta=0.5):  0.4578313253012048
+# AUC score:  0.8164414816401323
+# [[1931  157]
+#  [  47  114]]
+# Precision score:  0.42066420664206644
+# Recall score:  0.7080745341614907
 
 """
 # save forecast to file
 """
+
 validation_DateTime = train_df_DateTime.iloc[window_size_train:window_size_train+len(Xy_rest)]
 rolling_forecast_df = validation_DateTime.copy()
 rolling_forecast_df['Tacking_pred'] = rolling_forecast
@@ -539,7 +583,7 @@ ax.set_yticks([0, 1])
 ax.set_title(None)
 ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
-# plt.savefig('predictions/good_features_lag10_lightGBM_rolling_windows_18hrs_1_min.png')
+# plt.savefig('predictions/good_features_lag5_lightGBM_rolling_windows_18hrs_5_min.png')
 
 
 # free VRAM after using tensorflow
