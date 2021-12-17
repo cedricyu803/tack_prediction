@@ -96,6 +96,38 @@ os.chdir(r'C:\Users\Cedric Yu\Desktop\tacking')
 train_df_raw = pd.read_csv('test_data.csv')
 train_df = train_df_raw.copy()
 
+# missing values
+train_df.isnull().sum()
+# CurrentSpeed    167
+# CurrentDir      168
+# TWS             163
+# TWA             167
+# AWS             166
+# AWA             162
+# Roll            167
+# Pitch           164
+# HeadingMag      165
+# HoG             162
+# HeadingTrue     163
+# AirTemp         160
+# Longitude       164
+# Latitude        160
+# SoG             158
+# SoS             160
+# AvgSoS          162
+# VMG             163
+# RudderAng       162
+# Leeway          161
+# TWD             162
+# WSoG            164
+# VoltageDrawn    161
+# ModePilote      161
+# DateTime          5
+# Yaw             166
+# Tacking           5
+# dtype: int64
+
+
 # fillna with preceding value
 train_df = train_df.fillna(method='ffill')
 
@@ -242,6 +274,10 @@ mask2[np.tril_indices_from(mask2)] = False
 fig,ax= plt.subplots()
 fig.set_size_inches(20,15)
 sns.heatmap(cor2,mask= mask2,square=True,annot=False)
+ax.set_xticklabels(['Latitude', 'Longitude', 'CurrentSpeed', 'CurrentDir', 'WSoG', 'TWD',
+       'TWS', 'TWA', 'AWS', 'AWA', 'HeadingTrue', 'HeadingMag', 'HoG', 'Pitch',
+       'Roll', 'Yaw', 'Leeway', 'RudderAng', 'AirTemp', 'SoG', 'SoS', 'AvgSoS',
+       'VMG', 'VoltageDrawn', 'ModePilote', 'Tacking'],rotation=60)
 # plt.savefig('plots/correlation_matrix_abs.png', dpi = 300)
 
 # !!! small absolute correlation: TWA (except with AWA), magnetic heading, true heading except with yaw, voltage drawn, lat/long except with speeds and yaw
@@ -286,6 +322,25 @@ plt.ylim(-0.25,)
 # embed_minimal_html('export.html', views=[fig])
 
 # # !!! training set coordinates are localised in the Caribbeans; discard because it does not generalise
+
+#%% AirTemp
+
+
+train_df.plot(x='DateTime', y="AirTemp", color = 'red')
+ax = plt.gca()
+ax.set_xlabel('Date-Hour', fontsize = 20)
+ax.set_ylabel('Air temperature / Celsius', fontsize = 20, rotation=0)
+ax.xaxis.set_label_coords(1., -0.05)
+ax.yaxis.set_label_coords(0.05, 1.)
+# ax.set_yticks([0,1])
+ax.tick_params(axis = 'both', which = 'major', labelsize = 20)
+ax.tick_params(axis = 'both', which = 'minor', labelsize = 20)
+ax.set_title(None)
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+ax.get_legend().remove()
+plt.ylim(0,)
+# plt.savefig('plots/AirTemp_time.png', dpi = 150)
 
 #%% VoltageDrawn, ModePilote
 
@@ -428,29 +483,30 @@ ax = plt.gca()
 train_df.plot(x='DateTime', y="CurrentSpeed", ax=ax, label = 'Current Speed', color='blue', linewidth=1)
 train_df0.plot(x='DateTime', y="Tacking_rescaled", ax=ax, label = 'Tacking', color='black', linewidth=1)
 ax.set_xlabel('Date-Hour', fontsize = 12)
-ax.set_ylabel('knots', fontsize = 12, rotation=0)
+ax.set_ylabel('Water current speed / knots', fontsize = 16, rotation=0)
 ax.xaxis.set_label_coords(1., -0.05)
-ax.yaxis.set_label_coords(-0.05, 1.)
+ax.yaxis.set_label_coords(0.05, 1.)
 # ax.set_yticks([0,1])
 ax.tick_params(axis = 'both', which = 'major', labelsize = 12)
 ax.tick_params(axis = 'both', which = 'minor', labelsize = 12)
 ax.set_title(None)
 ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
-# plt.ylim(1.99,)
+plt.ylim(0.,)
 plt.legend(loc='lower right', fontsize = 16)
-# plt.savefig('plots/CurrentSpeed_tacking', dpi = 150)
+# plt.legend().remove()
+# plt.savefig('plots/CurrentSpeed', dpi = 150)
 
 
 train_df0['Tacking_rescaled'] = (train_df['CurrentDir'].max()-train_df['CurrentDir'].min())*train_df['Tacking'] + train_df['CurrentDir'].min()
 
 ax = plt.gca()
 train_df.plot(x='DateTime', y="CurrentDir", ax=ax, label = 'Current Direction', color='blue', linewidth=1)
-train_df0.plot(x='DateTime', y="Tacking_rescaled", ax=ax, label = 'Tacking', color='black', linewidth=1)
+# train_df0.plot(x='DateTime', y="Tacking_rescaled", ax=ax, label = 'Tacking', color='black', linewidth=1)
 ax.set_xlabel('Date-Hour', fontsize = 12)
-ax.set_ylabel('degree', fontsize = 12, rotation=0)
+ax.set_ylabel('Water current direction / degree', fontsize = 16, rotation=0)
 ax.xaxis.set_label_coords(1., -0.05)
-ax.yaxis.set_label_coords(-0.05, 1.)
+ax.yaxis.set_label_coords(0.05, 1.)
 # ax.set_yticks([0,1])
 ax.tick_params(axis = 'both', which = 'major', labelsize = 12)
 ax.tick_params(axis = 'both', which = 'minor', labelsize = 12)
@@ -459,7 +515,8 @@ ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
 # plt.ylim(1.99,)
 plt.legend(loc='lower right', fontsize = 16)
-# plt.savefig('plots/CurrentDir_tacking', dpi = 150)
+plt.legend().remove()
+# plt.savefig('plots/CurrentDir', dpi = 150)
 
 
 
@@ -618,6 +675,47 @@ ax.spines['right'].set_visible(False)
 
 #!!!
 """ time series plots """
+
+
+ax = plt.gca()
+train_df.plot(x='DateTime', y="AWS", ax=ax, label = 'Apparent wind speed', color='skyblue', linewidth=1)
+train_df.plot(x='DateTime', y="TWS", ax=ax, label = 'True wind speed', color='royalblue', linewidth=1)
+# train_df0.plot(x='DateTime', y="Tacking_rescaled", ax=ax, label = 'Tacking', color='black', linewidth=1)
+ax.set_xlabel('Date-Hour', fontsize = 12)
+ax.set_ylabel('knot', fontsize = 16)
+ax.xaxis.set_label_coords(1., -0.05)
+# ax.yaxis.set_label_coords(0.05, 1.)
+# ax.set_yticks([0,1])
+ax.tick_params(axis = 'both', which = 'major', labelsize = 12)
+ax.tick_params(axis = 'both', which = 'minor', labelsize = 12)
+ax.set_title(None)
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+# plt.ylim(1.99,)
+plt.legend(loc='lower right', fontsize = 16)
+# plt.legend().remove()
+# plt.savefig('plots/Windspeeds', dpi = 150)
+
+
+ax = plt.gca()
+train_df.plot(x='DateTime', y="AWA", ax=ax, label = 'Apparent wind angle', color='skyblue', linewidth=1)
+train_df.plot(x='DateTime', y="TWA", ax=ax, label = 'True wind angle', color='royalblue', linewidth=1)
+# train_df0.plot(x='DateTime', y="Tacking_rescaled", ax=ax, label = 'Tacking', color='black', linewidth=1)
+ax.set_xlabel('Date-Hour', fontsize = 12)
+ax.set_ylabel('degree', fontsize = 16)
+ax.xaxis.set_label_coords(1., -0.05)
+# ax.yaxis.set_label_coords(0.05, 1.)
+# ax.set_yticks([0,1])
+ax.tick_params(axis = 'both', which = 'major', labelsize = 12)
+ax.tick_params(axis = 'both', which = 'minor', labelsize = 12)
+ax.set_title(None)
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+# plt.ylim(1.99,)
+plt.legend(loc='lower right', fontsize = 16)
+# plt.legend().remove()
+# plt.savefig('plots/Windangles', dpi = 150)
+
 
 
 train_df_tack = [train_df.iloc[tack_start[i]-2*(tack_end[i]-tack_start[i]):tack_end[i]+2*(tack_end[i]-tack_start[i])] for i in range(len(tack_start))]
@@ -999,7 +1097,7 @@ ax = plt.gca()
 # train_df0.plot(x='DateTime', y="RudderAng_principal", ax=ax, label = 'Rudder Angle', color='skyblue', linewidth=1)
 train_df0.plot(x='DateTime', y="Roll_principal", ax=ax, label = 'Roll', color='gold', linewidth=1)
 # train_df.plot(x='DateTime', y="Leeway", ax=ax, label = 'Leeway', color='brown', linewidth=1)
-train_df0.plot(x='DateTime', y="SoS_rescaled", ax=ax, label = 'Spped over surface / knot', color='black')
+train_df0.plot(x='DateTime', y="SoS_rescaled", ax=ax, label = 'Speed over surface', color='black')
 ax = plt.gca()
 ax.set_xlabel('Date-Hour', fontsize = 16)
 # ax.set_ylabel('degree', fontsize = 16, rotation=0)
@@ -1299,7 +1397,7 @@ for i in range(len(train_df_tack)):
     fig = plt.figure(dpi = 150)
     ax = plt.gca()
     # train_df_tack[i].plot(x='DateTime', y="SoS", ax=ax, label = 'Speed over surface', color='skyblue', linewidth=0.5)
-    train_df_tack[i].plot(x='DateTime', y="SoG", ax=ax, label = 'Speed over ground', color='tomato', linewidth=0.5)
+    train_df_tack[i].plot(x='DateTime', y="SoG", ax=ax, label = 'Speed over ground', color='tomato', linewidth=1)
     # train_df_tack[i].plot(x='DateTime', y="VMG", ax=ax, label = 'Velocity made good', color='pink', linewidth=0.5)
     train_df_tack[i].plot(x='DateTime', y="Tacking_rescaled", ax=ax, label = 'Tacking', color='black')
     ax = plt.gca()
