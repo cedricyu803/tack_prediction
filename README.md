@@ -4,6 +4,8 @@ A marine electronics company that produces hardware and software for sailing yac
 
 We analyse the data in order to give the client some feedback on data collection and handling process, and suggest some ideas of how this data can be used to enhance their product and make it more popular among professional sailors and boat manufacturers. In particular, we are interested in 'tack prediction'. "A tack is a specific maneuver in sailing and alerting the sailor of the necessity to tack in the near future would bring some advantage to them compared to other sailors, who would have to keep an eye out on the conditions all the time to decide when to tack." We build a forecasting model that would be alerting sailors of the tacking event happening ahead.
 
+features.txt contains the description of the data columns given in the dataset. requirements.txt contains a list of Python packages required by the codes. (Note: tensorflow and keras are commented out in the codes and not used.)
+
 In exploratory_data_analysis.py, we perform exploratory data analysis (EDA) and generate plots which are stored in the 'plots' folder. The EDA also informs us of feature engineering strategy, e.g. convert some angles to sines and cosines, and some to the principal value (between -180 deg and 180 deg). 
 
 
