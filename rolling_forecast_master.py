@@ -66,17 +66,19 @@ File descriptions
 
 """
 # Rolling forecast with the good features and lags
+# Use XGBoost
 # Commented out tensorflow and LSTM network
 """
 
 #%% Workflow
 
 """
-1. load labeled dataset and keep only columns we want to use
+1. load labeled dataset, aggregate by minute and keep only columns we want to use
 2. Rolling forecast: 
-    sliding training window is 18 hours = 64800 seconds, validation window is 12 hours = 43200 seconds
+    sliding training window is 18 hours = 1080 minutes, validation window is 1 minute
     preprocessing
-    fit model: logistic regression
+    fit model: XGBoost
+    compute evaluation metrics
 """
 
 #%% Preamble
@@ -134,9 +136,14 @@ from xgboost import XGBClassifier
 
 #%% Hyper-parameters
 
-cols_to_keep = ['CurrentSpeed', 'CurrentDir', 'TWS', 'TWA', 'AWS', 'AWA', 'Roll',
-       'Pitch', 'HeadingMag', 'HoG', 'HeadingTrue', 'AirTemp', 'SoG', 'SoS', 'AvgSoS', 'VMG', 'Leeway', 'TWD',
-       'WSoG', 'VoltageDrawn', 'ModePilote', 'Yaw', 'Tacking']
+
+num_cols = ['CurrentSpeed', 'CurrentDir', 'TWS', 'TWA', 'AWS', 'AWA', 'Roll',
+       'Pitch', 'HeadingMag', 'HoG', 'HeadingTrue', 'AirTemp', 'SoG', 'SoS', 'AvgSoS', 'VMG', 'Leeway', 'TWD', 'WSoG',
+        'VoltageDrawn', 'Yaw']
+
+cat_cols = ['ModePilote', 'Tacking']
+
+cols_to_keep = num_cols + cat_cols
 
 # angles to convert to sines and cosines
 triglist = ['CurrentDir', 'TWD', 'HoG', 'HeadingMag', 'HeadingTrue']
@@ -145,44 +152,80 @@ triglist = ['CurrentDir', 'TWD', 'HoG', 'HeadingMag', 'HeadingTrue']
 ang_list = ['TWA', 'AWA', 'Pitch', 'Roll', 'Yaw', 'Leeway']
 
 # not including present time step
-# logistic regression:
-# lags = 1 for best F1 and F_0.5 (prefer precision i.e. false negative is OK) scores
-# lags = 2 for best F2 (prefer recall i.e. false positive is OK) scores
-# lags = 4 for best AUC
-lags = 1
+# lags = 5 for recall oriented
+# lags = 10 for precision oriented
+lags = 10
 
-# size of sliding windows in seconds
+# size of sliding windows in minutes
 # 18 hours
-window_size_train = 64800
-# 12 hours
-window_size_valid = 43200  # 21600  # tried 6 and 18 hours: worse
+window_size_train = 1080
+# validation (test) window is fixed to 1 minute; DO NOT change it
+# we are not forecasting other varibles. given what we know, we can only predict one step ahead.
+window_size_valid = 1
+# 1 minute
+# window_size_test = 1
 
 # logistic regression
 # regularisation hyperparameter C (smaller means more regularisation)
-C=.1
+C=100.
 
 # hyperparameters for LSTM
-learning_rate = 5e-6
-epochs = 10
-class_weight = {0: 5 / (2 * 4), 1: 5 / (2 * 1)}
+# learning_rate = 5e-6
+# epochs = 10
+# patience = 3   # early stopping based on val_loss
+# class_weight = {0: 5 / (2 * 4), 1: 5 / (2 * 1)}
 
 #%% load dataset
 
 train_df = pd.read_csv('test_data.csv')
-# train_df_raw = pd.read_csv('test_data.csv')
-train_df['DateTime'] = pd.to_datetime(train_df['DateTime'])
-# train_df = train_df.iloc[21600:]
-train_df_DateTime = train_df['DateTime']
-# train_df_raw.shape
 
 # train_df.shape
 # (220000, 27)
 
-# keep only columns we use
-train_df = train_df[cols_to_keep]
-
 # fillna with preceding value; do this here because validation set always has access to previously values that are in the training set
 train_df = train_df.fillna(method='ffill')
+
+
+#%% parse datetime, group by minute
+
+
+train_df['DateTime'] = pd.to_datetime(train_df['DateTime'])
+
+def get_day(row):
+    return row.day
+
+def get_hour(row):
+    return row.hour
+
+def get_minute(row):
+    return row.minute
+
+
+# extract datetime features
+
+train_df['day'] = train_df['DateTime'].apply(get_day)
+train_df['hour'] = train_df['DateTime'].apply(get_hour)
+train_df['minute'] = train_df['DateTime'].apply(get_minute)
+
+train_df_DateTime = train_df[['day', 'hour', 'minute', 'DateTime']]
+train_df_DateTime = train_df_DateTime.groupby(['day', 'hour', 'minute']).agg(np.min)
+
+train_df = train_df[['day', 'hour', 'minute'] + cols_to_keep]
+
+# group by minute
+# numerical columns are aggregated by the mean
+train_df_num = train_df[['day', 'hour', 'minute'] + num_cols].groupby(['day', 'hour', 'minute']).agg(np.nanmean)
+# categorical columns are aggregated by the mode
+train_df_cat = train_df[['day', 'hour', 'minute'] + cat_cols].groupby(['day', 'hour', 'minute']).agg(lambda x:x.value_counts().index[0])
+
+
+train_df = pd.concat([train_df_num, train_df_cat], axis = 1)
+train_df = train_df.reset_index()
+train_df = train_df.drop(['day', 'hour', 'minute'], axis = 1)
+train_df_DateTime = train_df_DateTime.reset_index().drop(['day', 'hour', 'minute'], axis = 1)
+
+# train_df.to_csv('test_data_by_minute.csv')
+
 
 #%% pre-processing
 
@@ -190,9 +233,7 @@ train_df = train_df.fillna(method='ffill')
 preprocessing(df) takes a labeled/unlabeled dataset df and returns a preprocessed one
 """
 
-# for nlags in [3,4,5,6,7,8]:
-#     lags = nlags
-    
+
 def preprocessing(df):
     
     df_ = df.copy()
@@ -242,11 +283,7 @@ def preprocessing(df):
 #%% Rolling forecast
 
 """
-train-validation split: sliding training window is 18 hours=64800 seconds, validation and prediction windows are 12 hours = 43200 seconds.
-
-Given an initial dataset, take the first 18 hours as training set, and divide the rest into 3 (complete) chunks of 12 hours. 
-If the last chunk does not have 43200 instances, ignore until the sensors gather enough data.
-Thereafter, once we gather 12 hours of data, it is appended to the existing dataset (so we can fillna with previous values) and retrain the model with new train/validation windows.
+train-test split: sliding training window is 18 hours = 1080 minutes, test=prediction window is 1 minute.
 """
 
 # preprocess dataset
@@ -259,13 +296,6 @@ Xy_train = train_df_processed.iloc[:window_size_train]
 # anything after the initial training period
 Xy_rest = train_df_processed.iloc[window_size_train:]
 
-
-# partition Xy_rest into chunks of validation sets of 12 hours = 43200 seconds
-# if the last chunk does not have 43200 instances, ignore until the sensors gather enough data
-Xy_rest_partitioned = []
-for i in range(len(Xy_rest)//window_size_valid):
-    Xy_chunk = Xy_rest.iloc[window_size_valid*i:window_size_valid*(i+1)]
-    Xy_rest_partitioned.append(Xy_chunk)
 
 """
 Rolling forecast
@@ -284,39 +314,35 @@ histories_nn = []
 # initialise one model, then re-train the same model in each sliding window
 use_logistic = False
 use_XGBoost = False
-# use_nn = False
+use_nn = False
 
 # logistic regression
-use_logistic = True
-model = LogisticRegression(max_iter = 10000, class_weight='balanced', C=C)
+# use_logistic = True
+# model = LogisticRegression(max_iter = 10000, class_weight='balanced', C=C)
 
 # XGBoost
-# use_XGBoost = True
-# model = XGBClassifier(scale_pos_weight = 5., verbosity=0)
+use_XGBoost = True
+model = XGBClassifier(scale_pos_weight = 5., verbosity=0)
 
 # neural network
 # use_nn = True
 # model = tf.keras.models.Sequential([
 #     layers.InputLayer(input_shape=(history_rolling.shape[1]-1, 1)),
 #     # layers.Bidirectional(layers.LSTM(16, return_sequences=True)),
-#    layers.Bidirectional(layers.LSTM(16, return_sequences=False)),
-#    layers.Dropout(0.2),
-#    layers.BatchNormalization(),
+#     layers.Bidirectional(layers.LSTM(16, return_sequences=False)),
+#     layers.Dropout(0.2),
+#     layers.BatchNormalization(),
 #   # tf.keras.layers.Dense(units=128, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(l2=1e-4)),
 #     layers.Dense(8, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(l2=1e-4)),
 #     layers.Dense(1, activation = 'sigmoid')
 # ])
-#
-# callback = tf.keras.callbacks.EarlyStopping(
-#     monitor='val_loss', mode = 'min', patience=30, min_delta = 0.00001, restore_best_weights=True)
-#
 # model.compile(loss="binary_crossentropy", optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),metrics=[tf.keras.metrics.AUC()])
 
 
 # for i in range(1):
-for i in tqdm(range(len(Xy_rest_partitioned))):
+for i in tqdm(range(len(Xy_rest))):
     
-    Xy_valid_roll = Xy_rest_partitioned[i]
+    Xy_valid_roll = Xy_rest.iloc[i:i+window_size_valid]
     
     # separate features and labels
     X_valid_roll = Xy_valid_roll.drop(['Tacking'], axis = 1)
@@ -354,7 +380,7 @@ for i in tqdm(range(len(Xy_rest_partitioned))):
         
     elif use_XGBoost:
         model.fit(X_train_roll_shuffled_scaled, y_train_roll_shuffled, 
-                  eval_set = [(X_train_roll_shuffled_scaled, y_train_roll_shuffled), (X_valid_roll_scaled, y_valid_roll)], 
+                  eval_set = [(X_train_roll_shuffled_scaled, y_train_roll_shuffled)], 
                   eval_metric=fbeta_eval,
                   early_stopping_rounds = 30, 
                   verbose=0)
@@ -365,8 +391,7 @@ for i in tqdm(range(len(Xy_rest_partitioned))):
     #     X_train_roll_shuffled_scaled_nn = np.expand_dims(X_train_roll_shuffled_scaled, -1)
     #     X_valid_roll_scaled_nn = np.expand_dims(X_valid_roll_scaled, -1)
         
-    #     history = model.fit(X_train_roll_shuffled_scaled_nn, y_train_roll_shuffled, 
-    #                 validation_data=(X_valid_roll_scaled_nn, y_valid_roll),
+    #     history = model.fit(X_train_roll_shuffled_scaled_nn, y_train_roll_shuffled,
     #                 class_weight=class_weight,
     #                 epochs=epochs, 
     #                 callbacks = [callback])
@@ -388,14 +413,11 @@ for i in tqdm(range(len(Xy_rest_partitioned))):
     history_rolling = pd.concat([history_rolling.iloc[window_size_valid:window_size_train], Xy_valid_roll])
 
 
-# save trained LSTM model
-# model.save('LSTM_model.h5')
-
-# logistic regression
-# without lag features
-# 100%|██████████| 3/3 [00:01<00:00,  1.80it/s]
-# with lag features
-# 100%|██████████| 3/3 [00:02<00:00,  1.03it/s]
+# XGBoost
+# lag 5
+# 100%|██████████| 2249/2249 [23:43<00:00,  1.58it/s]
+# lag 10
+# 100%|██████████| 2244/2244 [37:16<00:00,  1.00it/s]
 
 
 #%% Model performance and predictions
@@ -404,123 +426,62 @@ for i in tqdm(range(len(Xy_rest_partitioned))):
 # Summary of model performance
 """
 
-validation_DateTime = train_df_DateTime.iloc[window_size_train:window_size_train+len(Xy_rest_partitioned)*window_size_valid]
-
-# save forecast to file
-# validation_DateTime.to_csv('predictions/validation_DateTime.csv')
-# rolling_forecast.tofile('predictions/forecast.npy')
-
-
 # y_valid = Xy_rest_partitioned[0]['Tacking'].to_numpy()
-y_valid = pd.concat([X_chunk['Tacking'] for X_chunk in Xy_rest_partitioned]).to_numpy()
+y_valid = Xy_rest['Tacking'].to_numpy()
+
 
 # !!!
 print('\nlags = {}'.format(lags))
-print('\nF_beta score (beta=1): ', fbeta_score(y_valid, rolling_forecast, beta=1))
+print('F_beta score (beta=1): ', fbeta_score(y_valid, rolling_forecast, beta=1))
 print('F_beta score (beta=2): ', fbeta_score(y_valid, rolling_forecast, beta=2))
 print('F_beta score (beta=0.5): ', fbeta_score(y_valid, rolling_forecast, beta=0.5))
 print('AUC score: ', roc_auc_score(y_valid, rolling_forecast))
-
-# rolling forecast
-# logistic regression
-# validation window = 12 hours
-# C=0.1:
-# lag 1
-# F_beta score (beta=1):  0.3662066393136889      <-------
-# F_beta score (beta=2):  0.4385385027693407
-# F_beta score (beta=0.5):  0.3143570696721312    <-------
-# AUC score:  0.7017156044933822
-# lag 2
-# F_beta score (beta=1):  0.36275502821588773
-# F_beta score (beta=2):  0.4413421590028871      <-------
-# F_beta score (beta=0.5):  0.30792473223936323
-# AUC score:  0.7040762985207428
-# lags = 3
-# F_beta score (beta=1):  0.3579348824069496
-# F_beta score (beta=2):  0.4408643307004418
-# F_beta score (beta=0.5):  0.30126498002663116
-# AUC score:  0.7042681570459348
-# lags = 4
-# F_beta score (beta=1):  0.35318444995864356
-# F_beta score (beta=2):  0.44038778877887785
-# F_beta score (beta=0.5):  0.29480806407069876
-# AUC score:  0.704471137804471                   <-------
-# lags = 5
-# F_beta score (beta=1):  0.3475856487725924
-# F_beta score (beta=2):  0.43814608269858546
-# F_beta score (beta=0.5):  0.28804882410802113
-# AUC score:  0.7034701368034703
-# lags = 6
-# F_beta score (beta=1):  0.34291410533311184
-# F_beta score (beta=2):  0.43540629482744075
-# F_beta score (beta=0.5):  0.2828327121245341
-# AUC score:  0.7019728061394729
-# lags = 7
-# F_beta score (beta=1):  0.34005839320276876
-# F_beta score (beta=2):  0.43450195328873453
-# F_beta score (beta=0.5):  0.27934074936403225
-# AUC score:  0.701633578022467
-# lags = 8
-# F_beta score (beta=1):  0.3377238515442512
-# F_beta score (beta=2):  0.4338656975193385
-# F_beta score (beta=0.5):  0.2764617149655817
-# AUC score:  0.7014347681014348
-
-
 # Confusion matrix, precision, recall
-
 # the count of true negatives is C00, false negatives is C10, true positives is C11 and false positives is C01.
 print(confusion_matrix(y_valid, rolling_forecast))
 print('Precision score: ', precision_score(y_valid, rolling_forecast))
 print('Recall score: ', recall_score(y_valid, rolling_forecast))
-# lag 1
-# array([[107699,  12181],
-#        [  4811,   4909]], dtype=int64)
-# Precision score:  0.28724400234055003    <------
-# Recall score:  0.5050411522633745
-# lag 2
-# [[106970  12910]
-#  [  4706   5014]]
-# Precision score:  0.27973666592278507
-# Recall score:  0.5158436213991769    
-# lag 3
-# [[106350  13530]
-#  [  4652   5068]]
-# Precision score:  0.27250241961501237
-# Recall score:  0.5213991769547325
-# lag 4
-# [[105708  14172]
-#  [  4596   5124]]
-# Precision score:  0.26554726368159204
-# Recall score:  0.5271604938271605
-# lag 5
-# [[105098  14782]
-#  [  4566   5154]]
-# Precision score:  0.25852728731942215
-# Recall score:  0.5302469135802469
-# lag 6
-# [[104665  15215]
-#  [  4560   5160]]
-# Precision score:  0.2532515337423313
-# Recall score:  0.5308641975308642
-# lag 7
-# [[104300  15580]
-#  [  4537   5183]]
-# Precision score:  0.249626739873814
-# Recall score:  0.5332304526748971
-# lag 8
-# [[103981  15899]
-#  [  4515   5205]]
-# Precision score:  0.24663570887035632
-# Recall score:  0.5354938271604939      <------
+
+# rolling forecast
+# XGBoost
+# lags = 5
+# F_beta score (beta=1):  0.8333333333333334
+# F_beta score (beta=2):  0.8724428399518652
+# F_beta score (beta=0.5):  0.7975797579757975
+# AUC score:  0.9402530877418435
+# [[2046   42]
+#  [  16  145]]
+# Precision score:  0.7754010695187166
+# Recall score:  0.9006211180124224
+# lags = 10
+# F_beta score (beta=1):  0.85459940652819
+# F_beta score (beta=2):  0.8780487804878048
+# F_beta score (beta=0.5):  0.8323699421965318
+# AUC score:  0.9395237399474599
+# [[2051   32]
+#  [  17  144]]
+# Precision score:  0.8181818181818182
+# Recall score:  0.8944099378881988
+
+
+"""
+# save forecast to file
+"""
+validation_DateTime = train_df_DateTime.iloc[window_size_train:window_size_train+len(Xy_rest)]
+rolling_forecast_df = validation_DateTime.copy()
+rolling_forecast_df['Tacking_pred'] = rolling_forecast
+# save forecast to file
+# validation_DateTime.to_csv('predictions/validation_DateTime.csv')
+# rolling_forecast_df.tocsv('predictions/rolling_forecast.csv')
 
 
 """
 # Plot forecast against ground truth
 """
+
 plt.figure(dpi=150)
-plt.plot(validation_DateTime, rolling_forecast, color = 'tomato', label = 'Model forecast')
-plt.plot(validation_DateTime, y_valid, color = 'black', label='Ground truth')
+plt.plot(validation_DateTime.squeeze().to_numpy(), rolling_forecast, color = 'tomato', label = 'Model forecast')
+plt.plot(validation_DateTime.squeeze(), y_valid, color = 'black', label='Ground truth')
 ax = plt.gca()
 ax.set_xlabel('Date-Hour')
 ax.legend(loc='upper right')
@@ -529,7 +490,7 @@ ax.set_yticks([0, 1])
 ax.set_title(None)
 ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
-# plt.savefig('predictions/good_features_lag4_logreg_rolling_windows_18_12hrs')
+# plt.savefig('predictions/good_features_lag10_XGBoost_rolling_windows_18hrs_1_min.png')
 
 
 # free VRAM after using tensorflow
@@ -537,74 +498,370 @@ ax.spines['right'].set_visible(False)
 # device = cuda.get_current_device()
 # device.reset()
 
-#%% logistic regression: feature coefficients [with lag 1 features]
+#%% XGBoost: feature importances [with lag 5 features]
 
-""" feature coefficients"""
-# get the feature names as numpy array
-feature_names = np.array(list(train_df_processed.drop(['Tacking'], axis = 1).columns))
-# Sort the [absolute values] of coefficients from the model
-logreg_coef = np.abs(model.coef_[0]).copy()
-logreg_coef.sort()
-sorted_coef_logreg = np.abs(model.coef_[0]).argsort()
+XGBC_model_feature_importances = pd.Series(model.feature_importances_, index = train_df_processed.drop(['Tacking'],axis=1).columns).sort_values(ascending = False)
+XGBC_model_feature_importances = XGBC_model_feature_importances / XGBC_model_feature_importances.max()
 
-# Find the 20 smallest and 10 largest absolute-coefficients
-print('Smallest Coefs:\n{}'.format(feature_names[sorted_coef_logreg[:20]]))
-print('Largest Coefs: \n{}'.format(feature_names[sorted_coef_logreg[:-21:-1]]))
-# Smallest Coefs:
-# ['WSoG_lag_1' 'HeadingMag_cos_lag_1' 'SoG_lag_1' 'HoG_cos' 'HoG_cos_lag_1'
-#  'HeadingMag_sin_lag_1' 'TWD_cos_lag_1' 'HoG_sin_lag_1' 'HeadingMag_cos'
-#  'CurrentDir_cos' 'HeadingTrue_cos' 'HoG_sin' 'TWD_cos'
-#  'HeadingTrue_cos_lag_1' 'CurrentDir_cos_lag_1' 'HeadingMag_sin'
-#  'TWD_sin_lag_1' 'TWD_sin' 'CurrentDir_sin' 'CurrentDir_sin_lag_1']
-# Largest Coefs: 
-# ['AWA_lag_1' 'Yaw_lag_1' 'Yaw' 'AirTemp' 'AirTemp_lag_1' 'SoS' 'TWS_lag_1'
-#  'TWS' 'TWA_lag_1' 'Pitch' 'Pitch_lag_1' 'Roll_lag_1' 'AWA' 'TWA'
-#  'AWS_lag_1' 'VMG_lag_1' 'VoltageDrawn_lag_1' 'AWS' 'VoltageDrawn'
-#  'CurrentSpeed']
+# CurrentSpeed_lag_5       1.000000
+# CurrentSpeed_lag_1       0.628808
+# CurrentSpeed_lag_2       0.473256
+# AvgSoS_lag_5             0.275669
+# Pitch_lag_2              0.199019
+# CurrentSpeed_lag_3       0.194534
+# AvgSoS_lag_3             0.156178
+# CurrentSpeed             0.146135
+# VMG_lag_4                0.142076
+# VMG_lag_3                0.134324
+# VoltageDrawn_lag_4       0.091403
+# SoS_lag_3                0.080030
+# AirTemp_lag_2            0.058322
+# AvgSoS                   0.057178
+# Yaw_lag_1                0.055551
+# VMG_lag_5                0.052296
+# Yaw                      0.052286
+# SoG_lag_1                0.051618
+# VMG_lag_2                0.048541
+# AirTemp_lag_3            0.046328
+# CurrentDir_sin_lag_2     0.042105
+# TWD_sin                  0.041015
+# Yaw_lag_4                0.033543
+# AirTemp_lag_4            0.030771
+# TWD_sin_lag_2            0.029861
+# SoG_lag_2                0.026470
+# AWS_lag_3                0.026442
+# Yaw_lag_3                0.025357
+# TWS                      0.022262
+# SoG_lag_3                0.020797
+# AirTemp_lag_1            0.018938
+# HeadingMag_sin           0.018040
+# HoG_cos_lag_2            0.016631
+# CurrentSpeed_lag_4       0.015452
+# CurrentDir_sin           0.014209
+# CurrentDir_cos_lag_1     0.013698
+# CurrentDir_cos_lag_2     0.012246
+# HoG_cos                  0.009531
+# VoltageDrawn_lag_5       0.008578
+# Roll_lag_2               0.007932
+# AWA_lag_4                0.006956
+# Yaw_lag_5                0.005963
+# CurrentDir_cos_lag_3     0.005184
+# SoS_lag_2                0.004649
+# HeadingTrue_sin_lag_2    0.002840
+# AirTemp                  0.002076
+# HoG_cos_lag_5            0.002051
+# HeadingMag_sin_lag_2     0.001100
+# HeadingTrue_cos_lag_1    0.000692
+# TWA_lag_5                0.000187
+# CurrentDir_cos_lag_4     0.000000
+# Yaw_lag_2                0.000000
 
-# smallest absolute-coefficients
-logreg_coef[:10]
-# array([0.00041963, 0.00115628, 0.00697025, 0.00719586, 0.01011405,
-#        0.01564169, 0.02760203, 0.02891603, 0.029022  , 0.03127004])
-# largest absolute-coefficients
-logreg_coef[:-11:-1]
-# array([2.73040145, 2.72453614, 2.52166662, 2.39053482, 2.3293054 ,
-#        2.04060126, 1.99097316, 1.96664918, 1.73755162, 1.65643076])
+
+#%% XGBoost: feature importances [with lag 10 features]
+
+XGBC_model_feature_importances = pd.Series(model.feature_importances_, index = train_df_processed.drop(['Tacking'],axis=1).columns).sort_values(ascending = False)
+XGBC_model_feature_importances = XGBC_model_feature_importances / XGBC_model_feature_importances.max()
+
+# CurrentSpeed_lag_9        1.000000
+# CurrentSpeed_lag_10       0.881460
+# CurrentSpeed_lag_7        0.810984
+# CurrentSpeed_lag_6        0.800780
+# CurrentSpeed_lag_8        0.610424
+# AvgSoS_lag_6              0.391511
+# Pitch_lag_3               0.172527
+# SoG_lag_7                 0.137643
+# VoltageDrawn_lag_4        0.105405
+# AvgSoS_lag_5              0.102505
+# AvgSoS                    0.096465
+# CurrentSpeed_lag_2        0.078123
+# CurrentSpeed              0.073301
+# VMG_lag_3                 0.066239
+# Yaw_lag_6                 0.060255
+# SoG_lag_6                 0.057388
+# Roll_lag_5                0.049028
+# Yaw_lag_5                 0.045565
+# VoltageDrawn_lag_3        0.044834
+# CurrentSpeed_lag_1        0.043226
+# Yaw_lag_4                 0.038204
+# TWS_lag_4                 0.034298
+# Yaw_lag_2                 0.024776
+# CurrentDir_sin_lag_1      0.023993
+# Yaw_lag_3                 0.021306
+# Yaw_lag_7                 0.018747
+# HoG_cos                   0.017276
+# Pitch_lag_5               0.017232
+# AWS_lag_2                 0.016904
+# CurrentSpeed_lag_3        0.015909
+# AirTemp_lag_7             0.015718
+# AWS_lag_3                 0.015102
+# CurrentSpeed_lag_4        0.015006
+# CurrentSpeed_lag_5        0.013468
+# SoG_lag_4                 0.013382
+# AvgSoS_lag_4              0.013316
+# VMG_lag_5                 0.010189
+# AirTemp_lag_5             0.010089
+# CurrentDir_sin            0.008009
+# CurrentDir_sin_lag_2      0.007758
+# HoG_cos_lag_1             0.005825
+# HeadingTrue_sin_lag_9     0.005236
+# HeadingMag_sin            0.003462
+# TWD_cos_lag_3             0.001349
+# TWD_cos                   0.000908
+# CurrentDir_cos_lag_1      0.000000
+# CurrentDir_cos_lag_2      0.000000
+# CurrentDir_cos_lag_3      0.000000
+# TWD_sin_lag_6             0.000000
+# CurrentDir_sin_lag_10     0.000000
+# CurrentDir_cos_lag_10     0.000000
+# TWD_sin_lag_5             0.000000
+# CurrentDir_cos_lag_4      0.000000
+# CurrentDir_cos_lag_5      0.000000
+# CurrentDir_cos_lag_6      0.000000
+# CurrentDir_cos_lag_7      0.000000
+# CurrentDir_cos_lag_8      0.000000
+# CurrentDir_cos_lag_9      0.000000
+# TWD_sin_lag_4             0.000000
+# TWD_sin_lag_3             0.000000
+# CurrentDir_sin_lag_8      0.000000
+# TWD_sin_lag_2             0.000000
+# TWD_sin_lag_1             0.000000
+# CurrentDir_sin_lag_9      0.000000
+# ModePilote_lag_6          0.000000
+# CurrentDir_sin_lag_7      0.000000
+# Yaw_lag_10                0.000000
+# WSoG_lag_10               0.000000
+# VoltageDrawn_lag_1        0.000000
+# VoltageDrawn_lag_2        0.000000
+# VoltageDrawn_lag_5        0.000000
+# VoltageDrawn_lag_6        0.000000
+# VoltageDrawn_lag_7        0.000000
+# VoltageDrawn_lag_8        0.000000
+# VoltageDrawn_lag_9        0.000000
+# VoltageDrawn_lag_10       0.000000
+# Yaw_lag_1                 0.000000
+# Yaw_lag_8                 0.000000
+# Yaw_lag_9                 0.000000
+# ModePilote_lag_1          0.000000
+# CurrentDir_sin_lag_6      0.000000
+# ModePilote_lag_2          0.000000
+# ModePilote_lag_3          0.000000
+# ModePilote_lag_4          0.000000
+# ModePilote_lag_5          0.000000
+# TWD_sin_lag_8             0.000000
+# ModePilote_lag_7          0.000000
+# ModePilote_lag_8          0.000000
+# ModePilote_lag_9          0.000000
+# ModePilote_lag_10         0.000000
+# CurrentDir_sin_lag_3      0.000000
+# CurrentDir_sin_lag_4      0.000000
+# CurrentDir_sin_lag_5      0.000000
+# TWD_sin_lag_7             0.000000
+# TWD_cos_lag_8             0.000000
+# TWD_sin_lag_9             0.000000
+# HeadingMag_cos_lag_5      0.000000
+# HeadingTrue_sin_lag_1     0.000000
+# HeadingMag_cos_lag_10     0.000000
+# HeadingMag_cos_lag_9      0.000000
+# HeadingMag_cos_lag_8      0.000000
+# HeadingMag_cos_lag_7      0.000000
+# HeadingMag_cos_lag_6      0.000000
+# HeadingMag_cos_lag_4      0.000000
+# HeadingMag_sin_lag_6      0.000000
+# HeadingMag_cos_lag_3      0.000000
+# HeadingMag_cos_lag_2      0.000000
+# HeadingMag_cos_lag_1      0.000000
+# HeadingMag_sin_lag_10     0.000000
+# HeadingMag_sin_lag_9      0.000000
+# HeadingMag_sin_lag_8      0.000000
+# HeadingTrue_sin_lag_2     0.000000
+# HeadingTrue_sin_lag_3     0.000000
+# HeadingTrue_sin_lag_4     0.000000
+# HeadingTrue_sin_lag_5     0.000000
+# HeadingTrue_sin_lag_6     0.000000
+# HeadingTrue_sin_lag_7     0.000000
+# HeadingTrue_sin_lag_8     0.000000
+# HeadingTrue_sin_lag_10    0.000000
+# HeadingTrue_cos_lag_1     0.000000
+# HeadingTrue_cos_lag_2     0.000000
+# HeadingTrue_cos_lag_3     0.000000
+# HeadingTrue_cos_lag_4     0.000000
+# HeadingTrue_cos_lag_5     0.000000
+# HeadingTrue_cos_lag_6     0.000000
+# HeadingTrue_cos_lag_7     0.000000
+# HeadingTrue_cos_lag_8     0.000000
+# HeadingTrue_cos_lag_9     0.000000
+# HeadingMag_sin_lag_7      0.000000
+# HeadingMag_sin_lag_5      0.000000
+# TWD_sin_lag_10            0.000000
+# TWD_cos_lag_9             0.000000
+# HoG_sin_lag_5             0.000000
+# HoG_sin_lag_4             0.000000
+# HoG_sin_lag_3             0.000000
+# HoG_sin_lag_2             0.000000
+# HoG_sin_lag_1             0.000000
+# TWD_cos_lag_10            0.000000
+# WSoG_lag_8                0.000000
+# HeadingMag_sin_lag_4      0.000000
+# TWD_cos_lag_7             0.000000
+# TWD_cos_lag_6             0.000000
+# TWD_cos_lag_5             0.000000
+# TWD_cos_lag_4             0.000000
+# TWD_cos_lag_2             0.000000
+# TWD_cos_lag_1             0.000000
+# HoG_sin_lag_6             0.000000
+# HoG_sin_lag_7             0.000000
+# HoG_sin_lag_8             0.000000
+# HoG_sin_lag_9             0.000000
+# HoG_sin_lag_10            0.000000
+# HoG_cos_lag_2             0.000000
+# HoG_cos_lag_3             0.000000
+# HoG_cos_lag_4             0.000000
+# HoG_cos_lag_5             0.000000
+# HoG_cos_lag_6             0.000000
+# HoG_cos_lag_7             0.000000
+# HoG_cos_lag_8             0.000000
+# HoG_cos_lag_9             0.000000
+# HoG_cos_lag_10            0.000000
+# HeadingMag_sin_lag_1      0.000000
+# HeadingMag_sin_lag_2      0.000000
+# HeadingMag_sin_lag_3      0.000000
+# WSoG_lag_9                0.000000
+# Leeway_lag_2              0.000000
+# WSoG_lag_7                0.000000
+# AWA_lag_1                 0.000000
+# TWA_lag_5                 0.000000
+# TWA_lag_6                 0.000000
+# TWA_lag_7                 0.000000
+# TWA_lag_8                 0.000000
+# TWA_lag_9                 0.000000
+# TWA_lag_10                0.000000
+# AWS_lag_1                 0.000000
+# AWS_lag_4                 0.000000
+# AWS_lag_5                 0.000000
+# AWS_lag_6                 0.000000
+# AWS_lag_7                 0.000000
+# AWS_lag_8                 0.000000
+# AWS_lag_9                 0.000000
+# AWS_lag_10                0.000000
+# AWA_lag_2                 0.000000
+# WSoG_lag_6                0.000000
+# AWA_lag_3                 0.000000
+# AWA_lag_4                 0.000000
+# AWA_lag_5                 0.000000
+# AWA_lag_6                 0.000000
+# AWA_lag_7                 0.000000
+# AWA_lag_8                 0.000000
+# AWA_lag_9                 0.000000
+# AWA_lag_10                0.000000
+# Roll_lag_1                0.000000
+# Roll_lag_2                0.000000
+# Roll_lag_3                0.000000
+# Roll_lag_4                0.000000
+# Roll_lag_6                0.000000
+# Roll_lag_7                0.000000
+# TWA_lag_4                 0.000000
+# TWA_lag_3                 0.000000
+# TWA_lag_2                 0.000000
+# TWA_lag_1                 0.000000
+# TWA                       0.000000
+# AWS                       0.000000
+# AWA                       0.000000
+# Roll                      0.000000
+# Pitch                     0.000000
+# AirTemp                   0.000000
+# SoG                       0.000000
+# SoS                       0.000000
+# VMG                       0.000000
+# Leeway                    0.000000
+# WSoG                      0.000000
+# VoltageDrawn              0.000000
+# Yaw                       0.000000
+# ModePilote                0.000000
+# CurrentDir_cos            0.000000
+# TWD_sin                   0.000000
+# HoG_sin                   0.000000
+# HeadingMag_cos            0.000000
+# HeadingTrue_sin           0.000000
+# HeadingTrue_cos           0.000000
+# TWS_lag_1                 0.000000
+# TWS_lag_2                 0.000000
+# TWS_lag_3                 0.000000
+# TWS_lag_5                 0.000000
+# TWS_lag_6                 0.000000
+# TWS_lag_7                 0.000000
+# TWS_lag_8                 0.000000
+# TWS_lag_9                 0.000000
+# TWS_lag_10                0.000000
+# Roll_lag_8                0.000000
+# Roll_lag_9                0.000000
+# Roll_lag_10               0.000000
+# SoS_lag_10                0.000000
+# AvgSoS_lag_2              0.000000
+# AvgSoS_lag_3              0.000000
+# AvgSoS_lag_7              0.000000
+# AvgSoS_lag_8              0.000000
+# AvgSoS_lag_9              0.000000
+# AvgSoS_lag_10             0.000000
+# VMG_lag_1                 0.000000
+# VMG_lag_2                 0.000000
+# VMG_lag_4                 0.000000
+# VMG_lag_6                 0.000000
+# VMG_lag_7                 0.000000
+# VMG_lag_8                 0.000000
+# VMG_lag_9                 0.000000
+# VMG_lag_10                0.000000
+# Leeway_lag_1              0.000000
+# TWS                       0.000000
+# Leeway_lag_3              0.000000
+# Leeway_lag_4              0.000000
+# Leeway_lag_5              0.000000
+# Leeway_lag_6              0.000000
+# Leeway_lag_7              0.000000
+# Leeway_lag_8              0.000000
+# Leeway_lag_9              0.000000
+# Leeway_lag_10             0.000000
+# WSoG_lag_1                0.000000
+# WSoG_lag_2                0.000000
+# WSoG_lag_3                0.000000
+# WSoG_lag_4                0.000000
+# WSoG_lag_5                0.000000
+# AvgSoS_lag_1              0.000000
+# SoS_lag_9                 0.000000
+# Pitch_lag_1               0.000000
+# SoS_lag_8                 0.000000
+# Pitch_lag_2               0.000000
+# Pitch_lag_4               0.000000
+# Pitch_lag_6               0.000000
+# Pitch_lag_7               0.000000
+# Pitch_lag_8               0.000000
+# Pitch_lag_9               0.000000
+# Pitch_lag_10              0.000000
+# AirTemp_lag_1             0.000000
+# AirTemp_lag_2             0.000000
+# AirTemp_lag_3             0.000000
+# AirTemp_lag_4             0.000000
+# AirTemp_lag_6             0.000000
+# AirTemp_lag_8             0.000000
+# AirTemp_lag_9             0.000000
+# AirTemp_lag_10            0.000000
+# SoG_lag_1                 0.000000
+# SoG_lag_2                 0.000000
+# SoG_lag_3                 0.000000
+# SoG_lag_5                 0.000000
+# SoG_lag_8                 0.000000
+# SoG_lag_9                 0.000000
+# SoG_lag_10                0.000000
+# SoS_lag_1                 0.000000
+# SoS_lag_2                 0.000000
+# SoS_lag_3                 0.000000
+# SoS_lag_4                 0.000000
+# SoS_lag_5                 0.000000
+# SoS_lag_6                 0.000000
+# SoS_lag_7                 0.000000
+# HeadingTrue_cos_lag_10    0.000000
+# dtype: float32
 
 
-#%% logistic regression: feature coefficients [with lags=2 features]
-
-""" feature coefficients"""
-# get the feature names as numpy array
-feature_names = np.array(list(train_df_processed.drop(['Tacking'], axis = 1).columns))
-# Sort the [absolute values] of coefficients from the model
-logreg_coef = np.abs(model.coef_[0]).copy()
-logreg_coef.sort()
-sorted_coef_logreg = np.abs(model.coef_[0]).argsort()
-
-# Find the 20 smallest and 10 largest absolute-coefficients
-print('Smallest Coefs:\n{}'.format(feature_names[sorted_coef_logreg[:20]]))
-print('Largest Coefs: \n{}'.format(feature_names[sorted_coef_logreg[:-21:-1]]))
-# Smallest Coefs:
-# ['WSoG_lag_1' 'HeadingMag_cos_lag_1' 'SoG_lag_1' 'HoG_cos' 'HoG_cos_lag_1'
-#  'HeadingMag_sin_lag_1' 'TWD_cos_lag_1' 'HoG_sin_lag_1' 'HeadingMag_cos'
-#  'CurrentDir_cos' 'HeadingTrue_cos' 'HoG_sin' 'TWD_cos'
-#  'HeadingTrue_cos_lag_1' 'CurrentDir_cos_lag_1' 'HeadingMag_sin'
-#  'TWD_sin_lag_1' 'TWD_sin' 'CurrentDir_sin' 'CurrentDir_sin_lag_1']
-# Largest Coefs: 
-# ['AWA_lag_1' 'Yaw_lag_1' 'Yaw' 'AirTemp' 'AirTemp_lag_1' 'SoS' 'TWS_lag_1'
-#  'TWS' 'TWA_lag_1' 'Pitch' 'Pitch_lag_1' 'Roll_lag_1' 'AWA' 'TWA'
-#  'AWS_lag_1' 'VMG_lag_1' 'VoltageDrawn_lag_1' 'AWS' 'VoltageDrawn'
-#  'CurrentSpeed']
-
-# smallest absolute-coefficients
-logreg_coef[:10]
-# array([0.00041963, 0.00115628, 0.00697025, 0.00719586, 0.01011405,
-#        0.01564169, 0.02760203, 0.02891603, 0.029022  , 0.03127004])
-# largest absolute-coefficients
-logreg_coef[:-11:-1]
-# array([2.73040145, 2.72453614, 2.52166662, 2.39053482, 2.3293054 ,
-#        2.04060126, 1.99097316, 1.96664918, 1.73755162, 1.65643076])
 
 
 
