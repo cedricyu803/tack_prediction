@@ -14,10 +14,9 @@ triglist = ['CurrentDir', 'TWD', 'HoG', 'HeadingMag', 'HeadingTrue']
 ang_list = ['TWA', 'AWA', 'Pitch', 'Roll', 'Yaw', 'Leeway']
 
 # not including present time step
-# logistic regression:
-# lags = 5 for recall oriented
-# lags = 10 for precision oriented
-lags = 5
+# lightGBM:
+# lags = 3 for best performance
+lags = 3
 
 # size of sliding windows in minutes
 # 18 hours

@@ -154,17 +154,16 @@ triglist = ['CurrentDir', 'TWD', 'HoG', 'HeadingMag', 'HeadingTrue']
 ang_list = ['TWA', 'AWA', 'Pitch', 'Roll', 'Yaw', 'Leeway']
 
 # not including present time step
-# lags = 5 for recall oriented
-# lags = 10 for precision oriented
-lags = 5
+# lightGBM:
+# lags = 3 for best performance
+lags = 3
 
 # size of sliding windows in minutes
 # 18 hours
 window_size_train = 1080
 # default validation (test) window is 1 minute
 # we are not forecasting other varibles. given what we know, we can only predict one step ahead. But we can choose how often to re-train our model
-window_size_valid = 1
-
+window_size_valid = 20
 # logistic regression
 # regularisation hyperparameter C (smaller means more regularisation)
 C=100.
@@ -493,7 +492,17 @@ print('Recall score: ', recall_score(y_valid, rolling_forecast))
 #  [  17  144]]
 # Precision score:  0.8181818181818182
 # Recall score:  0.8944099378881988
+
 # lightGBM
+# lags = 3
+# F_beta score (beta=1):  0.8975903614457831
+# F_beta score (beta=2):  0.9141104294478529
+# F_beta score (beta=0.5):  0.8816568047337279
+# AUC score:  0.9574697613599215
+# [[2068   22]
+#  [  12  149]]
+# Precision score:  0.8713450292397661
+# Recall score:  0.9254658385093167
 # lags = 5
 # F_beta score (beta=1):  0.8882175226586102
 # F_beta score (beta=2):  0.9029484029484031
@@ -515,6 +524,15 @@ print('Recall score: ', recall_score(y_valid, rolling_forecast))
 
 
 # prediction window = 5 minutes
+# lags = 3
+# F_beta score (beta=1):  0.853731343283582
+# F_beta score (beta=2):  0.8740831295843522
+# F_beta score (beta=0.5):  0.8343057176196034
+# AUC score:  0.9366831109394039
+# [[2059   31]
+#  [  18  143]]
+# Precision score:  0.8218390804597702
+# Recall score:  0.8881987577639752
 # lags = 5
 # F_beta score (beta=1):  0.8398791540785498
 # F_beta score (beta=2):  0.8538083538083538
@@ -524,8 +542,27 @@ print('Recall score: ', recall_score(y_valid, rolling_forecast))
 #  [  22  139]]
 # Precision score:  0.8176470588235294
 # Recall score:  0.8633540372670807
+# lags = 10
+# F_beta score (beta=1):  0.8267477203647416
+# F_beta score (beta=2):  0.8374384236453202
+# F_beta score (beta=0.5):  0.8163265306122449
+# AUC score:  0.9146790194505655
+# [[2051   32]
+#  [  25  136]]
+# Precision score:  0.8095238095238095
+# Recall score:  0.84472049689441
+
 # prediction window = 10 minutes
 # lightGBM
+# lags = 3
+# F_beta score (beta=1):  0.7607361963190183
+# F_beta score (beta=2):  0.7663782447466007
+# F_beta score (beta=0.5):  0.7551766138855054
+# AUC score:  0.875284555261672
+# [[2049   41]
+#  [  37  124]]
+# Precision score:  0.7515151515151515
+# Recall score:  0.7701863354037267
 # lags = 5
 # F_beta score (beta=1):  0.7904191616766467
 # F_beta score (beta=2):  0.8078335373317014
@@ -535,6 +572,84 @@ print('Recall score: ', recall_score(y_valid, rolling_forecast))
 #  [  29  132]]
 # Precision score:  0.7630057803468208
 # Recall score:  0.8198757763975155
+# lags = 10
+# F_beta score (beta=1):  0.7469135802469135
+# F_beta score (beta=2):  0.7496902106567535
+# F_beta score (beta=0.5):  0.7441574415744158
+# AUC score:  0.8656947844574386
+# [[2041   42]
+#  [  40  121]]
+# Precision score:  0.7423312883435583
+# Recall score:  0.7515527950310559
+
+# prediction window = 15 minutes
+# lags = 1
+# F_beta score (beta=1):  0.7020648967551621
+# F_beta score (beta=2):  0.7238442822384429
+# F_beta score (beta=0.5):  0.6815578465063001
+# AUC score:  0.855463878959182
+# [[2033   59]
+#  [  42  119]]
+# Precision score:  0.6685393258426966
+# Recall score:  0.7391304347826086
+# lags = 2
+# F_beta score (beta=1):  0.7014492753623188
+# F_beta score (beta=2):  0.7306763285024154
+# F_beta score (beta=0.5):  0.6744704570791527
+# AUC score:  0.860711835105198
+# [[2028   63]
+#  [  40  121]]
+# Precision score:  0.657608695652174
+# Recall score:  0.7515527950310559
+# lags = 3
+# F_beta score (beta=1):  0.7787610619469026
+# F_beta score (beta=2):  0.802919708029197
+# F_beta score (beta=0.5):  0.7560137457044674
+# AUC score:  0.8989331035097625
+# [[2044   46]
+#  [  29  132]]
+# Precision score:  0.7415730337078652
+# Recall score:  0.8198757763975155
+# lags = 4
+# F_beta score (beta=1):  0.7339449541284404
+# F_beta score (beta=2):  0.7407407407407407
+# F_beta score (beta=0.5):  0.7272727272727273
+# AUC score:  0.8616607547966426
+# [[2043   46]
+#  [  41  120]]
+# Precision score:  0.7228915662650602
+# Recall score:  0.7453416149068323
+# lags = 5
+# F_beta score (beta=1):  0.716867469879518
+# F_beta score (beta=2):  0.7300613496932515
+# F_beta score (beta=0.5):  0.7041420118343195
+# AUC score:  0.8571131101116108
+# [[2036   52]
+#   [  42  119]]
+# Precision score:  0.695906432748538
+# Recall score:  0.7391304347826086
+# lags = 10
+# F_beta score (beta=1):  0.7202380952380952
+# F_beta score (beta=2):  0.7387057387057386
+# F_beta score (beta=0.5):  0.7026713124274099
+# AUC score:  0.8628143235836989
+# [[2029   54]
+#  [  40  121]]
+# Precision score:  0.6914285714285714
+# Recall score:  0.7515527950310559
+
+# prediction window = 20 minutes
+# lightGBM
+# lags = 3
+# F_beta score (beta=1):  0.7240356083086054
+# F_beta score (beta=2):  0.7439024390243902
+# F_beta score (beta=0.5):  0.7052023121387283
+# AUC score:  0.8659633272905584
+# [[2036   54]
+#  [  39  122]]
+# Precision score:  0.6931818181818182
+# Recall score:  0.7577639751552795
+
 # prediction window = 30 minutes
 # lags = 5
 # F_beta score (beta=1):  0.6408839779005525
@@ -545,7 +660,26 @@ print('Recall score: ', recall_score(y_valid, rolling_forecast))
 #  [  45  116]]
 # Precision score:  0.5771144278606966
 # Recall score:  0.7204968944099379
-# prediction window = 60 minutes
+# lags = 3
+# F_beta score (beta=1):  0.670360110803324
+# F_beta score (beta=2):  0.716824644549763
+# F_beta score (beta=0.5):  0.6295525494276795
+# AUC score:  0.8568768759844275
+# [[2011   79]
+#  [  40  121]]
+# Precision score:  0.605
+# Recall score:  0.7515527950310559
+
+# # prediction window = 60 minutes
+# lags = 3
+# F_beta score (beta=1):  0.565947242206235
+# F_beta score (beta=2):  0.6555555555555557
+# F_beta score (beta=0.5):  0.4978902953586498
+# AUC score:  0.8334452732622069
+# [[1952  138]
+#  [  43  118]]
+# Precision score:  0.4609375
+# Recall score:  0.7329192546583851
 # lags = 5
 # F_beta score (beta=1):  0.5277777777777778
 # F_beta score (beta=2):  0.6229508196721311
@@ -555,6 +689,8 @@ print('Recall score: ', recall_score(y_valid, rolling_forecast))
 #  [  47  114]]
 # Precision score:  0.42066420664206644
 # Recall score:  0.7080745341614907
+
+
 
 """
 # save forecast to file
@@ -572,6 +708,7 @@ rolling_forecast_df['Tacking_pred'] = rolling_forecast
 # Plot forecast against ground truth
 """
 
+validation_DateTime = train_df_DateTime.iloc[window_size_train:window_size_train+len(Xy_rest)]
 plt.figure(dpi=150)
 plt.plot(validation_DateTime.squeeze().to_numpy(), rolling_forecast, color = 'tomato', label = 'Model forecast')
 plt.plot(validation_DateTime.squeeze(), y_valid, color = 'black', label='Ground truth')
@@ -583,7 +720,7 @@ ax.set_yticks([0, 1])
 ax.set_title(None)
 ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
-# plt.savefig('predictions/good_features_lag5_lightGBM_rolling_windows_18hrs_5_min.png')
+# plt.savefig('predictions/good_features_lag3_lightGBM_rolling_windows_18hrs_20_min.png')
 
 
 # free VRAM after using tensorflow
@@ -591,6 +728,8 @@ ax.spines['right'].set_visible(False)
 # device = cuda.get_current_device()
 # device.reset()
 
+
+#%% VALIDATION WINDOW = 1 MIN
 #%% XGBoost: feature importances [with lag 5 features]
 
 XGBC_model_feature_importances = pd.Series(model.feature_importances_, index = train_df_processed.drop(['Tacking'],axis=1).columns).sort_values(ascending = False)
@@ -648,6 +787,11 @@ XGBC_model_feature_importances = XGBC_model_feature_importances / XGBC_model_fea
 # TWA_lag_5                0.000187
 # CurrentDir_cos_lag_4     0.000000
 # Yaw_lag_2                0.000000
+
+#%% lightGBM: feature importances [with lag 3 features]
+
+lightGBM_model_feature_importances = pd.Series(model.feature_importances_, index = train_df_processed.drop(['Tacking'],axis=1).columns).sort_values(ascending = False)
+lightGBM_model_feature_importances = lightGBM_model_feature_importances / lightGBM_model_feature_importances.max()
 
 #%% lightGBM: feature importances [with lag 5 features]
 
