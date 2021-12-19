@@ -66,7 +66,7 @@ File descriptions
 
 """
 # Rolling forecast with the good features and lags
-# Use XGBoost
+# Use lightGBM
 # Commented out tensorflow and LSTM network
 """
 
@@ -77,7 +77,7 @@ File descriptions
 2. Rolling forecast: 
     sliding training window is 18 hours = 1080 minutes, validation window is defaulted to 1 minute
     preprocessing
-    fit model: XGBoost
+    fit model: lightGBM
     compute evaluation metrics
 """
 
